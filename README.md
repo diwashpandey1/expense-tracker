@@ -1,57 +1,415 @@
-# AVORA — Your money. Your direction.
+# AVORA — Personal Finance Tracker
 
-React + Firebase personal finance tracker. Firebase Authentication handles identity, Cloud Firestore stores user-scoped records, and Firebase Hosting serves the frontend. No custom API server, SQL database, Cloud Functions, Firebase Storage, or profile images are used.
+AVORA is a responsive personal finance tracker built with React, JavaScript, Vite, Firebase Authentication, and Cloud Firestore. It supports account-backed income and spending, savings accounts and goals, budgets, recurring entries, reporting, CSV backups, and display-currency conversion.
+
+This repository is the application source and its single maintained project guide. **Project setup, architecture, data model, financial behavior, security, testing, deployment, migration boundaries, and known limitations are documented here.** Source files remain JavaScript (`.js`) or React JSX (`.jsx`); TypeScript is not used.
+
+## Contents
+
+- [What the app does](#what-the-app-does)
+- [Routes](#routes)
+- [Financial behavior and data integrity](#financial-behavior-and-data-integrity)
+- [Currency and conversion](#currency-and-conversion)
+- [Settings, privacy, and offline use](#settings-privacy-and-offline-use)
+- [Technology and architecture](#technology-and-architecture)
+- [Project layout](#project-layout)
+- [Requirements](#requirements)
+- [Set up Firebase](#set-up-firebase)
+- [Configure the environment](#configure-the-environment)
+- [Run locally](#run-locally)
+- [Tests and checks](#tests-and-checks)
+- [Firestore data model](#firestore-data-model)
+- [Security and privacy](#security-and-privacy)
+- [Deploy to Firebase Hosting](#deploy-to-firebase-hosting)
+- [Data reset, account deletion, and migration](#data-reset-account-deletion-and-migration)
+- [Known limitations](#known-limitations)
+- [Troubleshooting](#troubleshooting)
+
+## What the app does
+
+### Public pages and financial tools
+
+- A public home page, About page, Contact page, and Blog/reading list.
+- A simple-interest calculator and a SIP/investment projection calculator.
+- A standalone currency exchange calculator using indicative reference rates.
+- The Contact page opens a pre-addressed email draft. It does not send or retain messages through a server.
+
+### Sign-in and account
+
+- Firebase email/password sign-up and sign-in.
+- Google sign-in through Firebase Authentication.
+- Password reset, persistent browser sign-in, profile setup, and sign-out.
+- Initials or a generic icon identify the user. Profile images, avatar uploads, image endpoints, and Firebase Storage are intentionally excluded.
+
+### Finance workspace
+
+- Multiple spending and savings accounts, optional opening balances, account history, and auditable balance adjustments.
+- Income, expenses, and internal transfers with date, category, optional note, and edit/void history.
+- Expense splits across two or three categories. Split amounts must equal the transaction total, and summaries and category budgets use the individual split amounts.
+- The original 18 expense, 8 income, and 9 savings category labels, plus custom categories. Used categories are archived so historical entries retain their category context.
+- Monthly or yearly budgets, category budgets, progress bars/rings, and threshold/over-limit warnings.
+- Savings goals backed by allocations from real savings-account balances.
+- Daily, weekly, monthly, yearly, and custom-interval recurring schedules.
+- Dashboard periods, charts, recent activity, budgets/goals context, recurring cash-flow forecast, and spending insights.
+- Analytics over monthly, yearly, lifetime, or selected date ranges.
+- Transaction CSV export and preview-before-import. Import validates dates, account/category names, type, amount, currency, duplicate rows, and split details before posting.
+
+## Routes
+
+| Route | Purpose | Access |
+| --- | --- | --- |
+| `/` | Home | Signed out |
+| `/about`, `/contact`, `/blog` | Public information pages | Signed out |
+| `/tools` | Financial tools index | Signed out |
+| `/tools/interest-calculator` | Simple-interest calculator | Signed out |
+| `/tools/sip-calculator` | SIP calculator | Signed out |
+| `/tools/currency-exchange` | Standalone currency calculator | Signed out |
+| `/login`, `/signup`, `/reset-password` | Authentication | Signed out |
+| `/app` | Dashboard overview | Signed in |
+| `/app/transactions` | Transaction history and entry | Signed in |
+| `/app/accounts` | Spending/savings accounts and history | Signed in |
+| `/app/recurring` | Recurring schedules and due items | Signed in |
+| `/app/categories` | Category management | Signed in |
+| `/app/budgets` | Monthly/yearly budgets | Signed in |
+| `/app/goals` | Savings goals and allocations | Signed in |
+| `/app/analytics` | Cash-flow reports and charts | Signed in |
+| `/app/settings` | Profile, appearance, dashboard, privacy, and app settings | Signed in |
+
+Signed-in users are redirected from public and authentication routes to `/app`. Unsigned users are redirected from `/app/*` to `/login`. These route guards improve navigation; Firestore Security Rules separately enforce data access.
+
+## Financial behavior and data integrity
+
+### Source amounts, account balances, and monthly income
+
+- An account's opening balance represents money that already existed when tracking began. It is not new income.
+- New account-backed income increases the selected account. Expenses reduce a spending account. Transfers move money between same-currency accounts and have no effect on combined balance, income, or expenses.
+- A person can spend more than the current month's income when they are spending money carried into the month. The controlling boundary for a new account-backed expense is available account balance, not that month's income.
+- An expense that exceeds its selected spending account requires the user to choose and confirm a savings account to cover the shortfall. The transfer and expense post together. Account balances cannot go below zero.
+- Budgets are planning limits. They may exceed income, do not reserve cash, and do not prevent a funded expense from being recorded. The app warns at the configured threshold (80% by default) and at 100%; the account balance remains the spending constraint.
+- Legacy accountless transactions remain intact and continue to appear in cash-flow reporting. They are not silently assigned to accounts or included in account balances.
+
+### Savings goals and recurring entries
+
+- A goal allocation reserves part of an existing savings balance. It does not create money, count as an expense, or change the account balance.
+- Withdrawals release allocations when required. Voiding a transaction restores associated allocation changes.
+- Recurring income stays pending until the user confirms it was received. A recurring expense that is not funded stays pending for review.
+- Recurring work is processed in the browser when a signed-in user opens the app. Deterministic occurrence/operation IDs make retries idempotent; there is no always-running server scheduler.
+
+### Amount precision and categories
+
+- Amounts are entered with the account/source currency's decimal precision and stored as integer minor units (for example, cents or paisa) represented as decimal strings.
+- Calculations use JavaScript `BigInt` where precise integer arithmetic is required. Materialized account balances are checked against safe integer limits.
+- Calendar dates are stored as `YYYY-MM-DD` strings rather than timestamps that can shift across time zones.
+- Category names are stored as snapshots on historical entries. Archiving a used category does not rewrite past transactions.
+- A split expense is still one ledger transaction and one total account posting. Its category lines divide the total for budgets, charts, and filters.
+
+## Currency and conversion
+
+The account/source currency and the display currency have different jobs:
+
+1. The source currency is the currency in which the account and its stored amounts are denominated.
+2. The display currency controls how the app formats balances, transactions, budgets, goals, summaries, and analytics.
+3. Changing display currency never rewrites transaction amounts, account balances, budget limits, goal allocations, or ledger postings.
+
+The app currently offers **USD, EUR, GBP, INR, NPR, AUD, CAD, JPY, CNY, SGD, CHF, and NZD**. The signed-in app uses the existing CurrencyAPI key from `VITE_CURRENCY_API_KEY` and requests rates for the supported target currencies from the account/source currency. CurrencyAPI's latest-rate endpoint supports a base currency and multiple requested target currencies ([endpoint documentation](https://currencyapi.com/docs/latest/)). The app sends currency codes only; it does not send a user's identity, transaction data, notes, or balances to the provider.
+
+For each user's source currency, a single Firestore record stores the rate table:
+
+```text
+users/{uid}/currencyRates/{baseCurrency}
+```
+
+Switching between target currencies reuses that table. The client checks the last successful sync and the Firestore Rules permit updates only after seven days for that source currency. The saved record includes the source code, target rates, provider rate date, and server sync timestamps. Thus an NPR account can display in USD and later EUR using the saved NPR-based table; a USD account has its own USD-based table and its own weekly sync window.
+
+If a request fails, saved rates remain available and are identified as stale. If no rates have ever been saved, amounts remain in source currency until a sync succeeds. The public standalone calculator remains a separate no-key Frankfurter reference-rate tool.
+
+**Browser key note:** Vite variables prefixed with `VITE_` are included in browser code. The CurrencyAPI key is therefore a client-side key, not a server secret. Keep it out of source control and Firestore; apply provider-side restrictions if available for the account/plan.
+
+For returning users whose active accounts all use a single currency that differs from the old profile currency setting, the app treats the account's currency as the source and keeps the former profile currency as the initial display choice. This compatibility correction updates the profile currency field; it does not rewrite any financial amount.
+
+## Settings, privacy, and offline use
+
+### Personalization
+
+Settings are saved per user in `users/{uid}/settings/preferences`. Available controls include:
+
+- Light, dark, or system theme; accent color; density; font size; sidebar state; and motion preference.
+- Dashboard period, visible widgets, hidden amounts, recent-transaction count, and summary-card order/width.
+- Transaction type/account/category defaults, date format, week start, list density, sorting, and optional save confirmation.
+- Budget warning threshold, progress display, and default monthly/yearly period.
+- In-app budget, overspending, recurring, goal, and monthly-summary reminders.
+- Display currency and weekly exchange-rate sync status.
+
+### Privacy
+
+- Firebase Authentication supplies the signed-in UID. Finance documents live below that user's Firestore path.
+- Financial data is not sent to a custom server; no Express API, PostgreSQL service, or Cloud Function is part of the app.
+- There are no profile-image uploads, file uploads, Firebase Storage integration, or image URLs in the schema.
+- Amount-hiding controls mask formatted amounts in the UI. They do not encrypt or remove stored values.
+- Currency conversion sends only currency codes to CurrencyAPI. The API key is a browser-side Vite value as described above.
+
+### Install and offline behavior
+
+The production build includes a web app manifest and a service worker that caches the app shell and same-origin assets. Firestore uses persistent browser caching when available, with a memory-cache fallback. Cached screens/data may be viewable offline, but financial posting and other Firestore transactions need a network connection; the app is not an offline-first ledger and does not promise that account operations will queue safely while disconnected.
+
+## Technology and architecture
+
+### Stack
+
+- React 19, JavaScript, JSX, and Vite.
+- Tailwind CSS 4, Lucide React, and Framer Motion.
+- React Router for public and authenticated routing; Recharts for analytics.
+- Firebase JavaScript SDK: Authentication and Cloud Firestore.
+- Firebase Hosting for the static single-page application.
+- CurrencyAPI for the signed-in app's cached display conversion; Frankfurter for the public converter.
+- Vitest, Testing Library, Firebase Emulator Suite, and rules-unit-testing for checks.
+
+No TypeScript, Node/Express API server, SQL database, Cloud Functions, Firebase Storage, FCM, or paid Firebase service is required by the application. Node.js is used to install dependencies, run Vite, run the Firebase CLI, and execute tests.
+
+### Request and data flow
+
+```text
+React/JavaScript browser app
+  ├── Firebase Authentication ── user UID
+  ├── Cloud Firestore SDK ─────── users/{uid}/... records
+  │      └── Firestore Rules enforce owner and write constraints
+  ├── CurrencyAPI ─────────────── supported currency rates only
+  │      └── saved per user in currencyRates/{baseCurrency}
+  └── Firebase Hosting ───────── static Vite build (dist/)
+```
+
+Pages call service modules for Firestore operations. Financial writes run in Firestore transactions that update the ledger, account balances, finance summary, and operation record together. Firestore Rules validate ownership, document shape, relationships, paired postings, and applicable account/rate constraints. React route guards are not treated as an authorization boundary.
+
+Firestore cannot recompute an arbitrary user-wide sum inside Security Rules. The finance summary is therefore app-maintained transactional state, not protection against a signed-in owner deliberately editing their own documents directly. Rules validate posted account deltas and nonnegative balance changes, but this browser-only architecture does not claim tamper-proof bookkeeping against the data owner.
+
+## Project layout
+
+```text
+src/
+  components/       Shared layouts, navigation, identity, and UI controls
+  constants/        Default categories and supported currencies
+  context/          Auth and user-preferences providers
+  domain/           Financial rules, ledger calculations, insights, and limits
+  lib/              Firebase initialization, dates, money, and helpers
+  pages/            Public pages and authenticated finance workspace
+  services/         Auth, Firestore reads/writes, ledger, CSV, rates, and lifecycle
+  test/             Emulator rules and ledger integration suites
+public/             Favicon, manifest, and service worker
+firestore.rules     Firestore ownership and validation rules
+firestore.indexes.json
+firebase.json       Existing Firebase Hosting, rules, indexes, and emulator config
+.env.example       Environment variable names and placeholders
+```
+
+The application source uses `.js` or `.jsx`. Configuration/tooling files may use the formats required by their tools; do not introduce `.ts` or `.tsx` application files or a `tsconfig.json`.
 
 ## Requirements
 
-- Node.js 22+ and npm.
-- A new Firebase project kept on the Spark plan.
-- Firebase Authentication email/password and Google providers enabled.
-- Cloud Firestore created in production mode; deploy firestore.rules and firestore.indexes.json.
-- Firebase CLI for local emulators and Hosting deployment.
+- Node.js 22 or newer and npm.
+- A Firebase project with a Firebase web app, Authentication, Cloud Firestore, and Firebase Hosting configured.
+- Firebase CLI access to the intended project for emulator/deployment commands.
+- A CurrencyAPI key for authenticated display conversion. The key is stored in the local environment, not in source code.
 
-Do not reuse any values from the original project. Copy .env.example to .env and enter the fresh Firebase web configuration from the new project. The app needs API key, auth domain, project ID, and app ID. No Admin/service-account key is needed.
-Set `VITE_CONTACT_EMAIL` to the support email address if you want the public contact form to open a ready-to-send email draft.
+Firebase Authentication, Firestore, and Hosting are designed for the Firebase Spark/free-plan architecture. Confirm current quotas and provider terms in the Firebase console before release; quota limits can change. This project does not silently require a Blaze upgrade.
 
-## Routes and product areas
+## Set up Firebase
 
-- `/` is the public Home page. `/about`, `/contact`, `/blog`, and `/tools/*` are public pages.
-- `/login`, `/signup`, and `/reset-password` (including legacy auth aliases) are public authentication pages.
-- After sign-in, visits to public/auth pages redirect to `/app`. The tracker lives under `/app/*` (overview, transactions, accounts, recurring, categories, budgets, goals, analytics, and settings). Unauthenticated visits to `/app/*` go to login.
-- Signed-in users are redirected from `/`, `/about`, `/contact`, `/blog`, `/tools/*`, and all sign-in/reset pages to `/app`.
-- Original defaults are seeded per account: 18 expense, 8 income, and 9 saving categories. Savings movements record both a savings category and a linked goal.
-- `/tools` includes simple-interest and SIP calculators plus currency conversion. Conversion uses the public Frankfurter reference-rate API without an API key; rates are indicative and usually update daily.
-- The Contact page opens a pre-addressed email draft; it does not send or store messages. Set `VITE_CONTACT_EMAIL` to enable it.
+Use the Firebase project you created for this application. This repository already contains your Firebase Hosting setup.
 
-## Local development
+1. In Firebase Console, enable **Email/Password** and **Google** under Authentication sign-in providers.
+2. Add `localhost` and the deployed Hosting domain to authorized domains for Authentication.
+3. Create the Cloud Firestore database in the intended location.
+4. Configure your Firebase web app values in `.env` as shown below.
+5. Deploy the repository's Firestore Rules and indexes before exercising features whose rules have changed:
 
-1. npm install
-2. Copy .env.example to .env and configure the new Firebase project.
-3. npm run dev
-4. npm run lint
-5. npm test
+   ```sh
+   firebase use
+   firebase deploy --only firestore:rules,firestore:indexes
+   ```
 
-For safe rules testing, use the Firebase Emulator Suite: npm run test:rules. Emulator tests use a demo project and do not touch production data.
+6. Keep the selected Firebase project pointed at your new project. Inspect `firebase use` before any deployment. Do not rerun `firebase init` over this repository or replace `.firebaserc`/`firebase.json` unless you specifically intend to reconfigure Hosting.
 
-## Firebase setup and deployment
+Firebase Authentication stores credentials and provider identity. Firestore stores the user profile and finance data. The frontend uses only the Firebase client SDK; it needs no Admin SDK key or separate backend.
 
-1. Confirm the selected Firebase project is the new project and remains on Spark. `firebase init hosting` configures static hosting only; it does not create Firestore or publish Firestore rules.
-2. In Authentication → Sign-in method, enable Email/Password and Google, choose a support email, and authorize `localhost` plus the deployed Hosting domain.
-3. Create Firestore and deploy rules/indexes: npx firebase-tools deploy --only firestore:rules,firestore:indexes.
-4. Set fresh Vite configuration in .env for local use; configure the same VITE_FIREBASE_* variables as repository build variables for CI.
-5. Build: npm run build.
-6. Deploy static Hosting: npx firebase-tools deploy --only hosting.
+## Configure the environment
 
-Firebase Hosting Spark currently has finite storage/transfer quotas; Firestore has daily read/write/delete and storage quotas. If quotas are reached, the service may stop until reset. Do not upgrade to Blaze without explicit approval. Check TECH_STACK.md for official links and current figures.
+Copy the example file and edit the local copy:
 
-## Data and privacy
+```powershell
+Copy-Item .env.example .env
+```
 
-Every user record is stored beneath users/{uid}; Firestore Rules validate the signed-in UID and document shape. User data is never protected solely by React route guards. Ledger amounts use minor-unit decimal strings and calculations use BigInt; account materialized balances are safe integer minor units. There is no image upload or file storage.
+Or on macOS/Linux:
 
-Account-backed income, expenses, transfers, and savings funding use atomic Firestore transactions. Legacy accountless transaction records are preserved and shown in cash-flow reports, while account balances include only opening balances and new ledger activity. The app does not infer historical account assignments. Budgets are planning limits, are not capped by income, and do not reserve cash. Recurring items are processed when the signed-in user opens the app; there is no server scheduler.
+```sh
+cp .env.example .env
+```
 
-Personalization is stored at `users/{uid}/settings/preferences`, scoped by Firestore Rules, and applied through a shared React provider. Settings cover appearance, dashboard widgets and periods, transaction entry defaults, date/list display, monthly or yearly budget periods and warning/progress display, privacy masking, and in-app reminders. See `SYSTEM_ARCHITECTURE.md` and `DATABASE_SCHEMA.md` for defaults and behavior. Notifications are evaluated while the app is open; Firebase Cloud Messaging and scheduled delivery are not used.
+Set these variables in `.env`:
 
-## Financial redesign status
+| Variable | Required | Description |
+| --- | --- | --- |
+| `VITE_FIREBASE_API_KEY` | Yes | Firebase web app client config value |
+| `VITE_FIREBASE_AUTH_DOMAIN` | Yes | Firebase Authentication domain, usually `<project-id>.firebaseapp.com` |
+| `VITE_FIREBASE_PROJECT_ID` | Yes | Firebase project ID |
+| `VITE_FIREBASE_APP_ID` | Yes | Firebase web app ID |
+| `VITE_FIREBASE_MEASUREMENT_ID` | No | Optional Firebase web measurement ID; analytics is not used by this app |
+| `VITE_CURRENCY_API_KEY` | For live app conversion | Existing CurrencyAPI key, read by the client and sent in the API request header |
+| `VITE_CONTACT_EMAIL` | Optional | Address prefilled by the public Contact page's email draft |
+| `VITE_USE_FIREBASE_EMULATORS` | Optional | Set to `true` to point Auth/Firestore SDKs to local emulators |
 
-The account ledger, account-backed goals, recurring schedules, overspending confirmation, and date-range balances are implemented. Budgets may exceed income and spending can exceed a budget with warnings at 80% and 100%, subject to available account funds. Legacy data reconciliation and live Firebase verification remain. See `IMPLEMENTATION_REPORT.md` for exact validation results and remaining limitations.
+Values with a `VITE_` prefix are public in the browser bundle. Never put a Firebase service-account key, Admin credential, private signing key, or other server secret in `.env` for this SPA. Do not copy old Firebase project values. The `.env` file is local and should remain untracked; `.env.example` contains placeholders only.
+
+After editing environment variables, restart Vite so it reloads them.
+
+## Run locally
+
+```sh
+npm install
+npm run dev
+```
+
+Vite prints the local URL, usually `http://localhost:5173`. Open it in a modern browser and sign in with an enabled Firebase provider. The app shows a Firebase setup screen if the required Firebase web values are missing.
+
+For a production-like local preview:
+
+```sh
+npm run build
+npm run preview
+```
+
+The preview serves the static output from `dist/`; it does not deploy anything.
+
+### Firebase emulators
+
+The checked-in `firebase.json` configures Auth on port `9099`, Firestore on `8080`, Hosting on `5000`, and disables the Emulator UI. To use the Auth and Firestore emulator connections from the app, set `VITE_USE_FIREBASE_EMULATORS=true` in a local environment and run the Firebase emulators in another terminal. Do not point emulator tests at production data.
+
+## Tests and checks
+
+The repository has separate commands for ordinary unit tests and emulator-backed suites:
+
+```sh
+npm run lint          # ESLint
+npm test              # Unit tests (Vitest)
+npm run test:rules    # Firestore Rules suite using a demo emulator project
+npm run test:ledger   # Account-ledger integration suite using a demo emulator project
+npm run build         # Production Vite build
+```
+
+`npm test` excludes the two emulator integration files; use the dedicated scripts to run them. The emulator scripts do not need or use production Firestore data. For release work, run the checks, review the selected Firebase project, and perform a browser walkthrough with the intended project before deploying.
+
+## Firestore data model
+
+Every finance path is scoped below `users/{uid}`. The signed-in Firebase Auth UID identifies the owner; the app does not trust a user ID sent from a form.
+
+| Path | Purpose |
+| --- | --- |
+| `users/{uid}` | Email, display name, source/account currency, timestamps |
+| `users/{uid}/settings/preferences` | Appearance, dashboard, entry defaults, reminders, privacy, display currency |
+| `users/{uid}/categories/{categoryId}` | Expense, income, and savings categories; archive/default flags |
+| `users/{uid}/accounts/{accountId}` | Account type/classification, source currency, opening/current balance, status |
+| `users/{uid}/transactions/{transactionId}` | Legacy transaction records and mirrors of account-backed entries for history UI |
+| `users/{uid}/ledgerEntries/{operationId}` | Account-backed income, expense, transfer, adjustment, and split details |
+| `users/{uid}/financialOperations/{operationId}` | Idempotency and signed account deltas used by rules validation |
+| `users/{uid}/financeState/summary` | Serialized savings balance and goal-allocation totals maintained with operations |
+| `users/{uid}/goalAllocations/{goalId}` | Savings reserved toward a goal; not a separate balance |
+| `users/{uid}/auditEvents/{auditId}` | Account/transaction audit snapshots |
+| `users/{uid}/budgets/{budgetId}` | Monthly or yearly overall/category limits |
+| `users/{uid}/goals/{goalId}` | Goal target, date, and status |
+| `users/{uid}/recurringSchedules/{scheduleId}` | Schedule definition and next due date |
+| `users/{uid}/recurringOccurrences/{scheduleId_dueDate}` | Pending/processed occurrence with deterministic identity |
+| `users/{uid}/currencyRates/{baseCurrency}` | Cached supported-currency table and seven-day sync timestamp |
+
+Money uses integer minor units as decimal strings in ledger documents. `occurredOn` is a calendar-date string; Firestore timestamps are used for audit and create/update times. New account-backed transactions include their original `currencyCode`; the current display currency is a preference and is not stored as the transaction's denomination.
+
+Composite indexes are defined in `firestore.indexes.json`. Transaction history uses bounded batches (up to 400 records per query batch) and client-side filtering/sorting/pagination; larger histories increase Firestore reads and browser memory use.
+
+## Security and privacy
+
+- Firestore Rules enforce owner-scoped paths and validate fields and important relationships. Firebase Authentication is the only identity system.
+- Firebase UID is consistent across Auth, frontend session, Firestore owner path, and rule checks.
+- Frontend route guards do not replace Firestore authorization.
+- Financial changes use atomic Firestore transactions with stable operation IDs to prevent duplicate application on retry.
+- No Google access token is stored for use with another API. No custom backend receives Firebase tokens.
+- No uploaded image or file is stored; Firebase Storage is not used or needed.
+- User financial data is not sent to CurrencyAPI or the standalone Frankfurter calculator.
+- Browser cache and amount masking are convenience features, not encryption. Protect access to the device and Firebase account.
+
+Firestore Rules cannot independently aggregate an arbitrary transaction history. The app pairs account updates with posted operations and maintains the finance summary transactionally. This improves consistency but does not make an account owner's own database writes tamper-proof.
+
+## Deploy to Firebase Hosting
+
+The existing Hosting configuration serves `dist/` and rewrites SPA routes to `index.html`. Deploy only after confirming the CLI is targeting your intended project:
+
+```sh
+firebase use
+npm run lint
+npm test
+npm run build
+firebase deploy --only firestore:rules,firestore:indexes
+firebase deploy --only hosting
+```
+
+The last two commands can be run separately so rules/indexes are published before hosting code that uses them. The package also defines:
+
+```sh
+npm run deploy
+```
+
+That command builds and deploys Hosting, Firestore Rules, and indexes together. Inspect the selected project before invoking it. Firebase Hosting requires no API rewrite because the application has no custom API server. Do not approve a Firebase billing-plan upgrade just to deploy this client-only app.
+
+## Data reset, account deletion, and migration
+
+### Reset finance data
+
+The in-app reset control requires typing `RESET`. It removes account/ledger/transaction, recurring, goal/allocation, budget, audit, finance-state, and settings data in sequential batches, then resets the active preference state. It preserves the profile and categories. The separate cached currency-rate documents are retained so a finance reset does not force another provider request.
+
+### Delete account
+
+Account deletion reauthenticates the user (password or Google popup), removes the user's known Firestore subcollections in bounded batches, removes the profile document, then deletes the Firebase Authentication identity. If Firestore cleanup fails, Auth deletion is not attempted. This is client-driven, not one atomic server job; if the browser/network stops during cleanup, the user may need to retry.
+
+### Existing/legacy financial data
+
+No historical account assignment or opening balance can be inferred safely from accountless transactions. Existing transactions, categories, budgets, and goals are kept in place. Legacy cash-flow totals remain separate from actual account balances until the owner explicitly reconciles history; the app does not invent account assignments or silently rewrite old monetary records.
+
+## Known limitations
+
+- Recurring schedules are processed only when a signed-in user opens the app. No server scheduler runs while browsers are closed.
+- Firestore and CurrencyAPI are third-party services and can be unavailable or quota-limited. A stale cached rate is used where possible.
+- The CurrencyAPI Vite key is client-visible because this is a browser-only app. It must not be treated as a backend secret.
+- The in-app weekly rate limit is per user's source/base currency and is checked by Firestore Rules. Deploy the current rules before using the new cache path.
+- Offline shell and Firestore cache support do not make financial postings safe to perform offline.
+- Historical accountless data still needs owner-reviewed reconciliation before it can contribute to account balances.
+- Firestore usage and browser memory grow with financial history. Query volume is not aggregated server-side.
+- The production build may report a large JavaScript bundle due to charting and Firebase dependencies; further code splitting/performance work may be useful.
+- No production migration or deployment is performed by local build/test commands.
+
+## Troubleshooting
+
+### The app says Firebase is not configured
+
+Check that `.env` exists, required `VITE_FIREBASE_*` values are set from the intended Firebase web app, and restart `npm run dev`. Do not paste a Firebase Admin/service-account key into the Vite environment.
+
+### Sign-in fails or Google popup is blocked
+
+Confirm Email/Password or Google is enabled in Firebase Authentication, the current hostname is in Authorized domains, and the browser allows the popup. A same-email account created with a different provider must use that existing provider; provider linking is not implemented.
+
+### Firestore returns `permission-denied`
+
+Confirm you are signed in, that the selected Firebase project is correct, and that current `firestore.rules` have been deployed. Review the failing document path and payload shape. Route access alone does not grant database access.
+
+### Display currency stays in the source currency
+
+Check the selected display currency in Settings, verify `VITE_CURRENCY_API_KEY`, and ensure the latest Firestore Rules are deployed. If a saved rate is older than seven days, the next refresh occurs when the app syncs. When no cached table exists and the provider request fails, the app intentionally falls back to the source currency.
+
+### A category or split is rejected
+
+Confirm the category is active and matches the transaction type. A split requires two or three distinct expense categories, positive line amounts, and a sum exactly equal to the full transaction amount.
+
+### A transaction cannot be posted
+
+Check that the selected account is active, is a spending account for expenses, uses the source currency, and has sufficient funds. To cover a shortfall, choose and confirm a savings account with enough available funds. Transfers require two active accounts in the same currency.
+
+---
+
+**Project name in the interface:** AVORA. **Application language:** JavaScript/JSX only. **Backend model:** Firebase client SDK + Firebase services; no custom API server.
