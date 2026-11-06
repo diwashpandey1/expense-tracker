@@ -1,0 +1,42 @@
+{
+  "name": "expense-tracker-new",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "lint": "eslint .",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:rules": "firebase emulators:exec --project demo-expense-tracker --only firestore \"vitest run --config vitest.rules.config.js\"",
+    "test:ledger": "firebase emulators:exec --project demo-expense-ledger --only firestore \"vitest run --config vitest.ledger.config.js\"",
+    "deploy": "npm run build && firebase deploy --only hosting,firestore:rules,firestore:indexes"
+  },
+  "dependencies": {
+    "firebase": "^13.2.0",
+    "framer-motion": "^14.10.0",
+    "lucide-react": "^1.70.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "react-router-dom": "^7.18.5",
+    "recharts": "^3.10.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@firebase/rules-unit-testing": "^6.0.0",
+    "@tailwindcss/vite": "^4.3.4",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.8",
+    "@vitejs/plugin-react": "^6.1.2",
+    "eslint": "^10.14.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.7",
+    "firebase-tools": "^15.35.0",
+    "globals": "^17.13.0",
+    "jsdom": "^31.0.0",
+    "tailwindcss": "^4.3.4",
+    "vite": "^8.3.6",
+    "vitest": "^5.1.0"
+  }
+}
