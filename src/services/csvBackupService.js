@@ -55,25 +55,33 @@ export function parseCsv(text) {
   if (row.some((value) => value.trim())) records.push(row)
   if (records.length < 2) throw new Error('The CSV file needs a header and at least one transaction row.')
   const headers = records[0].map((value) => value.trim().toLowerCase().replaceAll(' ', '_'))
-  const required = ['date', 'type', 'amount', 'account', 'category']
+  const required = ['date', 'type', 'amount', 'account']
   const missing = required.filter((name) => !headers.includes(name))
   if (missing.length) throw new Error(`CSV is missing required columns: ${missing.join(', ')}.`)
-  return records.slice(1).map((values, index) => Object.fromEntries(headers.map((header, col) => [header, values[col] ?? ''])).__proto__ === null
-    ? {}
-    : Object.fromEntries(headers.map((header, col) => [header, values[col] ?? ''])))
-    .map((record, index) => ({ ...record, sourceRow: index + 2 }))
+  return records.slice(1).map((values, index) => ({
+    ...Object.fromEntries(headers.map((header, col) => [header, values[col] ?? ''])),
+    sourceRow: index + 2,
+  }))
 }
 
 export function transactionFingerprint(item) {
-  return [item.occurredOn, item.kind, String(item.amountMinor), item.accountId || '', item.destinationAccountId || '', item.categoryId || '', (item.note || '').trim().toLocaleLowerCase()]
+  const splitKey = (item.categorySplits || []).map((line) => `${line.categoryId}:${line.amountMinor}`).join(',')
+  return [item.occurredOn, item.kind, String(item.amountMinor), item.accountId || '', item.destinationAccountId || '', item.categoryId || '', splitKey, (item.note || '').trim().toLocaleLowerCase()]
     .join('|')
 }
 
-export function downloadCsv(csv, filename = 'pennywise-transactions.csv') {
+export async function stableCsvOperationId(item) {
+  const bytes = new TextEncoder().encode(transactionFingerprint(item))
+  const digest = await crypto.subtle.digest('SHA-256', bytes)
+  const hash = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('')
+  return `csv_${hash}`
+}
+
+export function downloadCsv(csv, filename = 'avora-transactions.csv') {
   const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
   const link = document.createElement('a')
   link.href = url
   link.download = filename
   link.click()
-  URL.revokeObjectURL(url)
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000)
 }

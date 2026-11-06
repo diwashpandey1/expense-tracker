@@ -25,10 +25,9 @@ const AppLayout = lazy(() => import('./components/AppLayout'))
 const ProfileSetupPage = lazy(() => import('./pages/ProfileSetupPage'))
 
 function FirebaseSetup() {
-  return <main className="grid min-h-screen place-items-center bg-[#f5f6f2] p-6">
+  return <main className="grid min-h-screen place-items-center bg-[#f7f8f5] p-6">
     <section className="max-w-lg rounded-3xl border border-[#e5e9e1] bg-white p-8 shadow-xl">
-      <div className="mb-4 inline-flex rounded-2xl bg-[#edf4e7] p-3 text-[#497345]">ET</div>
-      <p className="text-xs font-bold uppercase tracking-[.18em] text-[#738679]">Expense Tracker 2.0</p>
+      <p className="text-xs font-bold uppercase tracking-[.18em] text-[#738679]">AVORA · PERSONAL FINANCE</p>
       <h1 className="mt-3 font-serif text-3xl font-semibold text-[#1b3025]">Connect your fresh Firebase project</h1>
       <p className="mt-3 text-sm leading-6 text-[#748078]">Add the web app values from your new Firebase project to the local .env file, then restart Vite. No old project values are used.</p>
       <pre className="mt-5 overflow-x-auto rounded-xl bg-[#f3f5f1] p-4 text-xs leading-6 text-[#35473b]">VITE_FIREBASE_API_KEY=…{ '\n' }VITE_FIREBASE_AUTH_DOMAIN=…{ '\n' }VITE_FIREBASE_PROJECT_ID=…{ '\n' }VITE_FIREBASE_APP_ID=…</pre>
@@ -53,7 +52,7 @@ function PublicGate({ children }) {
 
 export default function App() {
   if (!firebaseReady) return <FirebaseSetup />
-  return <Suspense fallback={<LoadingState label="Opening Expense Tracker" />}>
+  return <Suspense fallback={<LoadingState label="Opening AVORA" />}>
     <Routes>
       <Route path="/" element={<PublicGate><HomePage /></PublicGate>} />
       <Route path="/about" element={<PublicGate><AboutPage /></PublicGate>} />

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ArrowDownLeft, ArrowUpRight, CalendarDays, CirclePlus, PiggyBank, Wallet } from 'lucide-react'
+import { ArrowDownLeft, ArrowUpRight, CalendarDays, CirclePlus, PiggyBank, Wallet, TrendingDown, TrendingUp } from 'lucide-react'
 import { Area, AreaChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { useAuth } from '../context/AuthContext'
 import { usePreferences } from '../context/PreferencesContext'
@@ -12,7 +12,9 @@ import { listBudgets } from '../services/budgetService'
 import { listCategories } from '../services/categoryService'
 import { listGoals } from '../services/goalService'
 import { listAccounts, listLedgerEntries } from '../services/ledgerService'
+import { listRecurringSchedules } from '../services/recurringService'
 import { calculateSummary, summarizeByCategory, summarizeMonths } from '../services/summaryService'
+import { amountForCategory, calculateSpendingInsights, forecastRecurringCashFlow } from '../domain/financialFeatures'
 import { Card, EmptyState, LoadingState, PageHeading } from '../components/ui'
 
 const COLORS = ['#2c7652', '#8bad5a', '#d4a64a', '#5387a1', '#a86d65', '#7868a1']
@@ -32,6 +34,7 @@ export default function DashboardPage() {
   const [goals, setGoals] = useState([])
   const [accounts, setAccounts] = useState([])
   const [ledger, setLedger] = useState([])
+  const [schedules, setSchedules] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [reload, setReload] = useState(0)
@@ -41,8 +44,8 @@ export default function DashboardPage() {
 
   useEffect(() => {
     let active = true
-    Promise.all([listAllTransactions(user.uid), listBudgets(user.uid, budgetPeriodValue, budgetPeriod), listCategories(user.uid), listGoals(user.uid), listAccounts(user.uid), listLedgerEntries(user.uid)])
-      .then(([tx, budgetRows, categoryRows, goalRows, accountRows, ledgerRows]) => {
+    Promise.all([listAllTransactions(user.uid), listBudgets(user.uid, budgetPeriodValue, budgetPeriod), listCategories(user.uid), listGoals(user.uid), listAccounts(user.uid), listLedgerEntries(user.uid), listRecurringSchedules(user.uid)])
+      .then(([tx, budgetRows, categoryRows, goalRows, accountRows, ledgerRows, recurringRows]) => {
         if (!active) return
         setTransactions(tx)
         setBudgets(budgetRows)
@@ -50,6 +53,7 @@ export default function DashboardPage() {
         setGoals(goalRows.filter((goal) => goal.status === 'active'))
         setAccounts(accountRows)
         setLedger(ledgerRows)
+        setSchedules(recurringRows)
       })
       .catch((caught) => { if (active) setError(explainFirebaseError(caught, 'the dashboard')) })
       .finally(() => { if (active) setLoading(false) })
@@ -71,6 +75,8 @@ export default function DashboardPage() {
   const availableBalance = accounts.filter((account) => account.classification === 'spending').reduce((sum, account) => sum + BigInt(account.balanceMinor || 0), 0n)
   const savingsBalance = accounts.filter((account) => account.classification === 'savings').reduce((sum, account) => sum + BigInt(account.balanceMinor || 0), 0n)
   const totalBalance = availableBalance + savingsBalance
+  const cashForecast = useMemo(() => forecastRecurringCashFlow(accounts, schedules, { from: localDateString(), days: 30 }), [accounts, schedules])
+  const spendingInsights = useMemo(() => calculateSpendingInsights(transactions), [transactions])
   const savingsFlow = ledger.filter((event) => !event.voided && event.occurredOn >= range.from && event.occurredOn <= range.to && (event.kind === 'transfer' || event.operationKind === 'expense_with_savings_transfer')).reduce((result, event) => {
     for (const posting of event.postings || []) {
       const account = accounts.find((item) => item.id === posting.accountId)
@@ -83,7 +89,7 @@ export default function DashboardPage() {
   }, { in: 0n, out: 0n })
 
   const budgetRows = budgets.map((budget) => {
-    const spent = budgetTransactions.reduce((sum, item) => item.kind === 'expense' && (!budget.categoryId || item.categoryId === budget.categoryId) ? sum + BigInt(item.amountMinor) : sum, 0n)
+    const spent = budgetTransactions.reduce((sum, item) => sum + amountForCategory(item, budget.categoryId), 0n)
     const target = BigInt(budget.amountMinor)
     const percent = target ? Number((spent * 100n) / target) : 0
     const warning = percent >= preferences.budget.warningThreshold
@@ -94,19 +100,25 @@ export default function DashboardPage() {
 
   const selectedPeriodLabel = periodMode === 'weekly' ? `${formatDateForDisplay(range.from)} – ${formatDateForDisplay(range.to)}` : periodMode === 'yearly' ? year : periodMode === 'lifetime' ? 'Lifetime' : monthLabel(month)
   const widget = (key) => dashboardPrefs.widgets[key] !== false
+  const summaryCards = {
+    balance: <><Stat title="Total current balance" value={displayMoney(totalBalance, currency)} icon={Wallet} tone="green" detail="Across all tracked accounts" /><Stat title="Available balance" value={displayMoney(availableBalance, currency)} icon={Wallet} tone="green" detail="Spending-classified accounts" /><Stat title="Savings balance" value={displayMoney(savingsBalance, currency)} icon={PiggyBank} tone="gold" detail="Savings-classified accounts" /></>,
+    income: <><Stat title="Lifetime income" value={displayMoney(lifetime.income, currency)} icon={ArrowDownLeft} tone="blue" detail="Posted income records" /><Stat title={`Income · ${selectedPeriodLabel}`} value={displayMoney(period.income, currency)} icon={ArrowDownLeft} tone="blue" detail={selectedPeriodLabel} /></>,
+    expenses: <><Stat title="Lifetime expenses" value={displayMoney(lifetime.expenses, currency)} icon={ArrowUpRight} tone="rose" detail="Actual expense records" /><Stat title={`Expenses · ${selectedPeriodLabel}`} value={displayMoney(period.expenses, currency)} icon={ArrowUpRight} tone="rose" detail={selectedPeriodLabel} /></>,
+    savings: <><Stat title="Moved into savings" value={displayMoney(savingsFlow.in, currency)} icon={PiggyBank} tone="gold" detail={`Transfers · ${selectedPeriodLabel}`} /><Stat title="Moved out of savings" value={displayMoney(savingsFlow.out, currency)} icon={PiggyBank} tone="gold" detail={`Transfers · ${selectedPeriodLabel}`} /></>,
+  }
+  const summaryLabels = { balance: 'Account balances', income: 'Income summaries', expenses: 'Expense summaries', savings: 'Savings summaries' }
 
   return <>
     <PageHeading eyebrow="Your overview" title={'Good to see you, ' + (profile.displayName.split(' ')[0] || 'there')} description={`Here’s how your money is moving ${periodMode === 'lifetime' ? 'over time' : `this ${periodMode === 'monthly' ? 'month' : periodMode === 'weekly' ? 'week' : 'year'}`}.`} action={<div className="flex flex-wrap items-center gap-2"><select aria-label="Dashboard period" value={periodMode} onChange={(event) => { setPeriodModeTouched(true); setPeriodMode(event.target.value) }} className="rounded-xl border border-[#e0e6de] bg-white px-3 py-2 text-sm"><option value="weekly">This week</option><option value="monthly">Monthly</option><option value="yearly">Yearly</option><option value="lifetime">Lifetime</option></select>{periodMode === 'monthly' && <label className="flex items-center gap-2 rounded-xl border border-[#e0e6de] bg-white px-3 py-2 text-sm text-[#405246]"><CalendarDays size={16} className="text-[#71877a]"/><span className="sr-only">Choose month</span><input aria-label="Choose month" type="month" value={month} onChange={(event) => setMonth(event.target.value)} className="bg-transparent outline-none" /></label>}{periodMode === 'yearly' && <input aria-label="Dashboard year" type="number" min="1900" max="2200" value={year} onChange={(event) => setYear(event.target.value)} className="w-28 rounded-xl border border-[#e0e6de] bg-white px-3 py-2 text-sm"/>}</div>} />
     {!loading && !error && preferences.notifications.monthlySummary && periodMode === 'monthly' && <Card className="mb-4"><p className="text-xs font-bold uppercase tracking-wider text-[#849087]">Monthly financial summary · {monthLabel(month)}</p><div className="mt-2 flex flex-wrap gap-x-8 gap-y-2 text-sm"><span>Income <strong className="ml-1">{displayMoney(period.income, currency)}</strong></span><span>Expenses <strong className="ml-1">{displayMoney(period.expenses, currency)}</strong></span></div></Card>}
+    {!loading && !error && <div className="mb-5 grid gap-4 xl:grid-cols-2">
+      {widget('forecast') && <Card><div className="flex items-center gap-2"><CalendarDays size={17} className="text-[#628d51]"/><h2 className="font-serif text-lg font-semibold text-[#23372b]">Next 30 days</h2></div><p className="mt-1 text-xs text-[#849087]">Estimate from active recurring schedules and current account balances.</p><div className="mt-4 grid grid-cols-3 gap-2"><ForecastMetric label="Starting" value={displayMoney(cashForecast.openingBalance)}/><ForecastMetric label="Scheduled in" value={displayMoney(cashForecast.scheduledIncome)}/><ForecastMetric label="Scheduled out" value={displayMoney(cashForecast.scheduledExpenses)}/></div><div className="mt-3 rounded-xl bg-[#f0f5eb] px-4 py-3"><p className="text-xs text-[#6d7e70]">Estimated balance by {formatDateForDisplay(cashForecast.to)}</p><p className="mt-1 text-xl font-semibold text-[#2b5941]">{displayMoney(cashForecast.projectedBalance)}</p></div>{cashForecast.events.length > 0 && <p className="mt-2 text-xs text-[#849087]">Based on {cashForecast.events.length} scheduled item{cashForecast.events.length === 1 ? '' : 's'}. Actual dates and spending may differ.</p>}</Card>}
+      {widget('insights') && <Card><div className="flex items-center gap-2"><TrendingUp size={17} className="text-[#628d51]"/><h2 className="font-serif text-lg font-semibold text-[#23372b]">Spending insights</h2></div><p className="mt-1 text-xs text-[#849087]">Month to date compared with the same days last month.</p><div className="mt-4 flex items-center gap-3"><span className="rounded-xl bg-[#f0f5eb] p-2.5 text-[#628d51]">{spendingInsights.changePercent === null || spendingInsights.changePercent <= 0 ? <TrendingDown size={19}/> : <TrendingUp size={19}/>}</span><p className="text-sm text-[#526257]">{spendingInsights.changePercent === null ? 'No previous-month spending to compare yet.' : `${Math.abs(spendingInsights.changePercent)}% ${spendingInsights.changePercent > 0 ? 'more' : spendingInsights.changePercent < 0 ? 'less' : 'same'} spending than the same point last month.`}</p></div><div className="mt-4 space-y-2">{spendingInsights.topCategories.length ? spendingInsights.topCategories.map((category) => <div key={category.id} className="flex justify-between gap-3 rounded-lg bg-[#f7f9f5] px-3 py-2 text-sm"><span className="truncate text-[#65756a]">{category.name}</span><strong className="shrink-0 text-[#34483b]">{displayMoney(category.amount)}</strong></div>) : <p className="text-sm text-[#849087]">Add an expense to see your category insights.</p>}</div></Card>}
+    </div>}
     {loading ? <LoadingState label="Gathering your monthly picture" /> : error ? <Card><EmptyState title="Dashboard unavailable" description={error} action={<button onClick={() => { setLoading(true); setReload((value) => value + 1) }} className="text-sm font-semibold text-[#3c6e4c]">Try again</button>} /></Card> : <>
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {widget('balance') && <><Stat title="Total current balance" value={displayMoney(totalBalance, currency)} icon={Wallet} tone="green" detail="Across all tracked accounts" /><Stat title="Available balance" value={displayMoney(availableBalance, currency)} icon={Wallet} tone="green" detail="Spending-classified accounts" /><Stat title="Savings balance" value={displayMoney(savingsBalance, currency)} icon={PiggyBank} tone="gold" detail="Savings-classified accounts" /></>}
-        {widget('income') && <><Stat title="Lifetime income" value={displayMoney(lifetime.income, currency)} icon={ArrowDownLeft} tone="blue" detail="Posted income records" /><Stat title={`Income · ${selectedPeriodLabel}`} value={displayMoney(period.income, currency)} icon={ArrowDownLeft} tone="blue" detail={selectedPeriodLabel} /></>}
-        {widget('expenses') && <><Stat title="Lifetime expenses" value={displayMoney(lifetime.expenses, currency)} icon={ArrowUpRight} tone="rose" detail="Actual expense records" /><Stat title={`Expenses · ${selectedPeriodLabel}`} value={displayMoney(period.expenses, currency)} icon={ArrowUpRight} tone="rose" detail={selectedPeriodLabel} /></>}
-        {widget('savings') && <><Stat title="Moved into savings" value={displayMoney(savingsFlow.in, currency)} icon={PiggyBank} tone="gold" detail={`Transfers · ${selectedPeriodLabel}`} /><Stat title="Moved out of savings" value={displayMoney(savingsFlow.out, currency)} icon={PiggyBank} tone="gold" detail={`Transfers · ${selectedPeriodLabel}`} /></>}
-      </div>
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{dashboardPrefs.widgetOrder.map((key, index) => widget(key) && <section key={key} aria-label={summaryLabels[key]} style={{ order: index }} className={dashboardPrefs.widgetSizes[key] === 'wide' ? 'grid gap-3 sm:col-span-2 xl:col-span-4 sm:grid-cols-2 xl:grid-cols-4' : 'grid gap-3 sm:col-span-2 xl:col-span-2 sm:grid-cols-2'}>{summaryCards[key]}</section>)}</div>
       {widget('balance') && accounts.length > 0 && <Card className="mt-5"><div className="flex items-center justify-between"><div><h2 className="font-serif text-xl font-semibold text-[#23372b]">Your accounts</h2><p className="mt-1 text-xs text-[#849087]">Balances reconcile to the total above</p></div><Link to="/app/accounts" className="text-sm font-semibold text-[#4c7652]">Manage</Link></div><div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{accounts.map((account) => <div key={account.id} className="flex items-center justify-between rounded-xl bg-[#f6f8f4] px-4 py-3"><span><span className="block text-sm font-semibold text-[#405247]">{account.name}</span><span className="mt-0.5 block text-xs capitalize text-[#849087]">{account.classification} · {account.accountType}</span></span><span className="text-sm font-bold tabular-nums text-[#304337]">{displayMoney(BigInt(account.balanceMinor || 0), currency)}</span></div>)}</div></Card>}
-      {transactions.length === 0 ? <Card className="mt-5"><EmptyState icon={CirclePlus} title="Start with your first transaction" description="Add an income or expense and your monthly picture will begin to take shape." action={<Link to="/app/transactions" className="inline-flex rounded-xl bg-[#173f31] px-4 py-2.5 text-sm font-semibold text-white">Add a transaction</Link>} /></Card> : <>
+      {transactions.length === 0 ? <Card className="mt-5"><EmptyState icon={CirclePlus} title="Start with your first transaction" description="Add an income or expense and your monthly picture will begin to take shape." action={<Link to="/app/transactions" className="inline-flex rounded-xl bg-[#2b5941] px-4 py-2.5 text-sm font-semibold text-white">Add a transaction</Link>} /></Card> : <>
         {widget('spendingBreakdown') && <div className="mt-5 grid gap-5 xl:grid-cols-[1.5fr_1fr]">
           <Card>
             <div className="mb-4 flex items-start justify-between"><div><h2 className="font-serif text-xl font-semibold text-[#23372b]">Cash flow</h2><p className="mt-1 text-xs text-[#849087]">Income and expenses · last six months</p></div><span className="rounded-lg bg-[#f2f5ef] px-2.5 py-1.5 text-xs font-semibold text-[#65796c]">{monthLabel(month)}</span></div>
@@ -138,6 +150,10 @@ export default function DashboardPage() {
 function Stat({ title, value, icon: Icon, tone, detail }) {
   const colors = { green: 'bg-[#edf5e8] text-[#52804e]', blue: 'bg-[#edf3f5] text-[#527d8d]', rose: 'bg-[#f9efec] text-[#b97768]', gold: 'bg-[#f8f2e6] text-[#aa8241]' }
   return <Card className="!p-4 sm:!p-5"><div className="flex items-start justify-between"><div><p className="text-xs font-semibold text-[#7b887f]">{title}</p><p className="mt-3 text-[1.38rem] font-bold tracking-tight text-[#1e3428] tabular-nums">{value}</p><p className="mt-1 text-[11px] text-[#98a198]">{detail}</p></div><span className={'rounded-xl p-2.5 ' + colors[tone]}><Icon size={18}/></span></div></Card>
+}
+
+function ForecastMetric({ label, value }) {
+  return <div className="min-w-0 rounded-xl bg-[#f7f9f5] px-3 py-2"><p className="text-[11px] text-[#849087]">{label}</p><p className="mt-1 truncate text-sm font-semibold text-[#34483b]">{value}</p></div>
 }
 
 function compact(minorValue, currency) {

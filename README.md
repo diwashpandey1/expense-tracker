@@ -1,4 +1,4 @@
-# Expense Tracker 2.0
+# AVORA — Your money. Your direction.
 
 React + Firebase personal finance tracker. Firebase Authentication handles identity, Cloud Firestore stores user-scoped records, and Firebase Hosting serves the frontend. No custom API server, SQL database, Cloud Functions, Firebase Storage, or profile images are used.
 

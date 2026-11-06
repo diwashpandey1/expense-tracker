@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app'
 import { getAuth, setPersistence, browserLocalPersistence, connectAuthEmulator } from 'firebase/auth'
-import { initializeFirestore, memoryLocalCache, connectFirestoreEmulator } from 'firebase/firestore'
+import { getFirestore, initializeFirestore, memoryLocalCache, persistentLocalCache, persistentSingleTabManager, connectFirestoreEmulator } from 'firebase/firestore'
 
 export const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -17,7 +17,15 @@ let db = null
 if (firebaseReady) {
   const app = initializeApp(firebaseConfig)
   auth = getAuth(app)
-  db = initializeFirestore(app, { localCache: memoryLocalCache() })
+  try {
+    const localCache = import.meta.env.MODE === 'test' || typeof indexedDB === 'undefined'
+      ? memoryLocalCache()
+      : persistentLocalCache({ tabManager: persistentSingleTabManager() })
+    db = initializeFirestore(app, { localCache })
+  } catch {
+    try { db = initializeFirestore(app, { localCache: memoryLocalCache() }) }
+    catch { db = getFirestore(app) }
+  }
   void setPersistence(auth, browserLocalPersistence)
 
   if (import.meta.env.VITE_USE_FIREBASE_EMULATORS === 'true') {

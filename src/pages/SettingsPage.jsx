@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Bell, Check, LayoutDashboard, LogOut, Palette, RotateCcw, Save, Settings2, ShieldCheck, Trash2, UserRound } from 'lucide-react'
+import { ArrowDown, ArrowUp, Bell, Check, LayoutDashboard, LogOut, Palette, RotateCcw, Save, Settings2, ShieldCheck, Trash2, UserRound } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { usePreferences } from '../context/PreferencesContext'
@@ -86,7 +86,7 @@ export default function SettingsPage() {
   const activeSection = sections.find((item) => item.id === section)
 
   return <>
-    <PageHeading eyebrow="Make Pennywise yours" title="Settings" description="Personalize how the app looks, what it shows, and how you enter transactions."/>
+    <PageHeading eyebrow="Make AVORA yours" title="Settings" description="Personalize how the app looks, what it shows, and how you enter transactions."/>
     <div className="grid gap-5 lg:grid-cols-[220px_minmax(0,1fr)]">
       <nav aria-label="Settings sections" className="flex gap-2 overflow-x-auto pb-1 lg:block lg:space-y-1 lg:overflow-visible">
         {sections.map(({ id, label, icon: Icon }) => <button key={id} type="button" onClick={() => setSection(id)} aria-current={section === id ? 'page' : undefined} className={`flex shrink-0 items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm font-medium lg:w-full ${section === id ? 'bg-[#eaf2e4] text-[#28543a]' : 'text-[#708075] hover:bg-white'}`}><Icon size={16}/>{label}</button>)}
@@ -122,8 +122,12 @@ export default function SettingsPage() {
             <Select label="Default dashboard period" value={p.dashboard.defaultPeriod} onChange={(value) => change('dashboard', { defaultPeriod: value })} options={['weekly','monthly','yearly','lifetime']} labels={['Weekly','Monthly','Yearly','Lifetime']}/>
             <Select label="Default analytics chart" value={p.dashboard.analyticsChartType} onChange={(value) => change('dashboard', { analyticsChartType: value })} options={['pie','bar','line']}/>
             <Select label="Recent transactions shown" value={String(p.dashboard.recentTransactionCount)} onChange={(value) => change('dashboard', { recentTransactionCount: Number(value) })} options={['5','10','20']}/>
-            <Toggle label="Hide amounts on the dashboard" description="Mask dashboard money labels while leaving other app sections visible. Use Privacy to hide amounts throughout Pennywise." checked={p.dashboard.hideAmounts} onChange={(value) => change('dashboard', { hideAmounts: value })}/>
-            {Object.entries({ balance: 'Account balances', income: 'Income summaries', expenses: 'Expense summaries', savings: 'Savings summaries', budgets: 'Budget check-in', goals: 'Savings goals', recentTransactions: 'Recent transactions', spendingBreakdown: 'Spending charts' }).map(([key, label]) => <Toggle key={key} label={`Show ${label.toLowerCase()}`} checked={p.dashboard.widgets[key] !== false} onChange={(value) => change('dashboard', { widgets: { [key]: value } })}/>) }
+            <div className="rounded-xl border border-[#e8ebe5] p-4"><h3 className="text-sm font-semibold text-[#34463b]">Summary card layout</h3><p className="mt-1 text-xs leading-5 text-[#849087]">Move the summary groups up or down and choose how much dashboard width each group uses.</p><div className="mt-3 space-y-2">{p.dashboard.widgetOrder.map((key, index) => {
+              const label = { balance: 'Account balances', income: 'Income summaries', expenses: 'Expense summaries', savings: 'Savings summaries' }[key]
+              return <div key={key} className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-[#f6f8f4] px-3 py-2.5"><span className="min-w-32 flex-1 text-sm font-medium text-[#405247]">{label}</span><div className="flex items-center gap-2"><button type="button" aria-label={`Move ${label} up`} disabled={index === 0} onClick={() => { const order = [...p.dashboard.widgetOrder]; [order[index - 1], order[index]] = [order[index], order[index - 1]]; change('dashboard', { widgetOrder: order }) }} className="rounded-lg border border-[#dfe5dd] bg-white p-2 text-[#45684a] disabled:opacity-35"><ArrowUp size={15}/></button><button type="button" aria-label={`Move ${label} down`} disabled={index === p.dashboard.widgetOrder.length - 1} onClick={() => { const order = [...p.dashboard.widgetOrder]; [order[index + 1], order[index]] = [order[index], order[index + 1]]; change('dashboard', { widgetOrder: order }) }} className="rounded-lg border border-[#dfe5dd] bg-white p-2 text-[#45684a] disabled:opacity-35"><ArrowDown size={15}/></button><select aria-label={`${label} width`} value={p.dashboard.widgetSizes[key]} onChange={(event) => change('dashboard', { widgetSizes: { [key]: event.target.value } })} className="rounded-lg border border-[#dfe5dd] bg-white px-2.5 py-2 text-sm"><option value="regular">Regular width</option><option value="wide">Wide</option></select></div></div>
+            })}</div></div>
+            <Toggle label="Hide amounts on the dashboard" description="Mask dashboard money labels while leaving other app sections visible. Use Privacy to hide amounts throughout AVORA." checked={p.dashboard.hideAmounts} onChange={(value) => change('dashboard', { hideAmounts: value })}/>
+            {Object.entries({ balance: 'Account balances', income: 'Income summaries', expenses: 'Expense summaries', savings: 'Savings summaries', budgets: 'Budget check-in', goals: 'Savings goals', recentTransactions: 'Recent transactions', spendingBreakdown: 'Spending charts', forecast: 'Cash-flow forecast', insights: 'Spending insights' }).map(([key, label]) => <Toggle key={key} label={`Show ${label.toLowerCase()}`} checked={p.dashboard.widgets[key] !== false} onChange={(value) => change('dashboard', { widgets: { [key]: value } })}/>) }
           </div>}
 
           {section === 'transactions' && <div className="space-y-3">
@@ -147,7 +151,7 @@ export default function SettingsPage() {
           </div>}
 
           {section === 'notifications' && <div className="space-y-3">
-            <p className="rounded-xl bg-[#f6f8f4] p-4 text-sm leading-6 text-[#65756a]">Pennywise uses in-app reminders when you open the app. Browser push and scheduled delivery are not enabled; this keeps notifications within the Firebase Spark browser-only setup.</p>
+            <p className="rounded-xl bg-[#f6f8f4] p-4 text-sm leading-6 text-[#65756a]">AVORA uses in-app reminders when you open the app. Browser push and scheduled delivery are not enabled; this keeps notifications within the Firebase Spark browser-only setup.</p>
             <Toggle label="Budget threshold alerts" description="Show budget warnings starting at your chosen threshold." checked={p.notifications.budgetThreshold} onChange={(value) => change('notifications', { budgetThreshold: value })}/>
             <Toggle label="Overspending alerts" description="Show an alert when expenses pass a budget limit." checked={p.notifications.overspending} onChange={(value) => change('notifications', { overspending: value })}/>
             <Toggle label="Recurring transaction reminders" description="Show pending recurring income and unfunded scheduled expenses in the Recurring section." checked={p.notifications.recurringReminders} onChange={(value) => change('notifications', { recurringReminders: value })}/>
@@ -156,7 +160,7 @@ export default function SettingsPage() {
           </div>}
 
           {section === 'privacy' && <div className="space-y-4">
-            <Toggle label="Hide financial amounts" description="Mask money values wherever Pennywise formats them. This does not change stored data or calculations." checked={p.privacy.hideBalances} onChange={(value) => change('privacy', { hideBalances: value })}/>
+            <Toggle label="Hide financial amounts" description="Mask money values wherever AVORA formats them. This does not change stored data or calculations." checked={p.privacy.hideBalances} onChange={(value) => change('privacy', { hideBalances: value })}/>
             <div className="rounded-xl border border-[#e8ebe5] p-4"><h3 className="font-semibold text-[#293e31]">Your data and identity</h3><p className="mt-2 text-sm leading-6 text-[#78857c]">Firebase Authentication manages your sign-in. Firestore Rules scope settings and finance records to your account UID. No profile image upload or file storage is used.</p></div>
             <div className="rounded-xl border border-[#e8ebe5] p-4"><h3 className="font-semibold text-[#293e31]">Data controls</h3><p className="mt-2 text-sm leading-6 text-[#78857c]">Reset removes financial records, accounts, schedules, and preferences while keeping your profile and categories. Delete permanently removes associated Firestore records and your Firebase Authentication identity.</p><div className="mt-4 flex flex-wrap gap-2"><Button variant="secondary" onClick={() => { setDialog('reset'); setActionError(''); setResetPhrase('') }}><RotateCcw size={16}/>Reset data</Button><Button variant="danger" onClick={() => { setDialog('delete'); setPassword(''); setActionError('') }}><Trash2 size={16}/>Delete account</Button></div></div>
             <Button variant="secondary" className="w-full" onClick={signOut}><LogOut size={16}/>Sign out</Button>

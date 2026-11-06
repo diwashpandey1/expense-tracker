@@ -1,10 +1,11 @@
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
-import { Activity, ArrowDownLeft, BarChart3, ChevronDown, CircleDollarSign, Command, LayoutDashboard, LogOut, Menu, Tags, Target, WalletCards, Landmark, CalendarClock } from 'lucide-react'
+import { Activity, ArrowDownLeft, BarChart3, ChevronDown, Command, LayoutDashboard, LogOut, Menu, Tags, Target, WalletCards, Landmark, CalendarClock } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { usePreferences } from '../context/PreferencesContext'
 import { processDueSchedules } from '../services/recurringService'
+import BrandLogo from './BrandLogo'
 
 const links = [
   { to: '/app', label: 'Overview', icon: LayoutDashboard, end: true },
@@ -40,29 +41,24 @@ export default function AppLayout() {
 
   const sidebar = <div className="flex h-full flex-col">
     <div className={`flex items-center gap-3 py-7 ${collapsed ? 'justify-center px-3' : 'px-6'}`}>
-      <div className="grid h-10 w-10 place-items-center rounded-2xl bg-[#c5e96c] text-[#183425]"><CircleDollarSign size={23} /></div>
-      {!collapsed && <div><p className="font-serif text-lg font-semibold leading-5 text-white">Pennywise</p><p className="mt-1 text-[10px] font-bold uppercase tracking-[.18em] text-[#91ad9d]">Personal finance</p></div>}
+      {collapsed ? <BrandLogo onDark markOnly markClassName="rounded-2xl" /> : <BrandLogo onDark subtitle className="gap-3" markClassName="h-10 w-10 rounded-2xl" />}
     </div>
     {!collapsed && <p className="px-6 pb-3 text-[10px] font-bold uppercase tracking-[.18em] text-[#739083]">Workspace</p>}
     <nav className={`flex-1 space-y-1 ${collapsed ? 'px-2' : 'px-3'}`} aria-label="Main navigation">
-      {links.map(({ to, label, icon: Icon, end }) => <NavLink key={to} to={to} end={end} title={collapsed ? label : undefined} aria-label={label} onClick={() => setMenuOpen(false)} className={({ isActive }) => `group flex items-center rounded-xl py-3 text-sm font-medium transition ${collapsed ? 'justify-center px-2' : 'gap-3 px-3.5'} ${isActive ? 'bg-[#244b3a] text-white shadow-sm' : 'text-[#b9c9bf] hover:bg-[#1d4233] hover:text-white'}`}>
+      {links.map(({ to, label, icon: Icon, end }) => <NavLink key={to} to={to} end={end} title={collapsed ? label : undefined} aria-label={label} onClick={() => setMenuOpen(false)} className={({ isActive }) => `group flex items-center rounded-xl py-3 text-sm font-medium transition ${collapsed ? 'justify-center px-2' : 'gap-3 px-3.5'} ${isActive ? 'bg-[#38664d] text-white shadow-sm' : 'text-[#b9c9bf] hover:bg-[#315d46] hover:text-white'}`}>
         {({ isActive }) => <><Icon size={18} strokeWidth={isActive ? 2.2 : 1.8} />{!collapsed && <span>{label}</span>}{isActive && <span className={`${collapsed ? 'absolute right-2' : 'ml-auto'} h-1.5 w-1.5 rounded-full bg-[#c5e96c]`} />}</>}
       </NavLink>)}
     </nav>
-    {!collapsed && <div className="mx-5 mb-4 rounded-2xl border border-white/10 bg-white/[.055] p-4">
-      <div className="mb-3 flex items-center gap-2 text-[#c5e96c]"><Activity size={15} /><span className="text-xs font-semibold">Small steps add up</span></div>
-      <p className="text-xs leading-5 text-[#a9bdb0]">A clear view of your money starts with one honest entry.</p>
-    </div>}
     <button onClick={() => navigate('/app/settings')} title={collapsed ? profile?.displayName : undefined} aria-label="Open settings" className={`flex items-center border-t border-white/10 py-4 text-left hover:bg-white/5 ${collapsed ? 'justify-center px-3' : 'gap-3 px-5'}`}>
       <InitialAvatar name={profile?.displayName} />
       {!collapsed && <><span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold text-white">{profile?.displayName || 'Your account'}</span><span className="mt-0.5 block truncate text-xs text-[#95aa9b]">{profile?.email}</span></span><ChevronDown size={16} className="text-[#8ea696]" /></>}
     </button>
   </div>
 
-  return <div className="min-h-screen bg-[#f5f6f2] lg:flex">
-    <aside className={`fixed inset-y-0 left-0 z-40 hidden flex-col bg-[#173f31] lg:flex ${collapsed ? 'w-[76px]' : 'w-[250px]'}`}>{sidebar}</aside>
+  return <div className="min-h-screen bg-[#f7f8f5] lg:flex">
+    <aside className={`fixed inset-y-0 left-0 z-40 hidden flex-col bg-[#2b5941] lg:flex ${collapsed ? 'w-[76px]' : 'w-[250px]'}`}>{sidebar}</aside>
     <AnimatePresence>
-      {menuOpen && <><motion.button initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-40 bg-black/40 lg:hidden" aria-label="Close navigation" onClick={() => setMenuOpen(false)} /><motion.aside initial={{ x: -280 }} animate={{ x: 0 }} exit={{ x: -280 }} transition={{ type: 'tween', duration: .2 }} className="fixed inset-y-0 left-0 z-50 w-[270px] bg-[#173f31] lg:hidden">{sidebar}</motion.aside></>}
+      {menuOpen && <><motion.button initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-40 bg-black/40 lg:hidden" aria-label="Close navigation" onClick={() => setMenuOpen(false)} /><motion.aside initial={{ x: -280 }} animate={{ x: 0 }} exit={{ x: -280 }} transition={{ type: 'tween', duration: .2 }} className="fixed inset-y-0 left-0 z-50 w-[270px] bg-[#2b5941] lg:hidden">{sidebar}</motion.aside></>}
     </AnimatePresence>
     <div className={`min-w-0 flex-1 ${collapsed ? 'lg:pl-[76px]' : 'lg:pl-[250px]'}`}>
       <header className="sticky top-0 z-30 flex h-[72px] items-center justify-between border-b border-[#e8ebe5] bg-[#f8f9f6]/95 px-4 backdrop-blur-md sm:px-7 lg:px-10">

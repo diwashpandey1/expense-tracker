@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import { Link, Navigate, useNavigate } from 'react-router-dom'
-import { ArrowRight, CircleDollarSign, Eye, EyeOff, LockKeyhole } from 'lucide-react'
+import { ArrowRight, Eye, EyeOff, LockKeyhole } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { Button, Field, InlineError } from '../components/ui'
 import GoogleSignInButton from '../components/GoogleSignInButton'
+import BrandLogo from '../components/BrandLogo'
 
 export default function LoginPage() {
   const { user, login, signInWithGoogle } = useAuth()
@@ -37,17 +38,17 @@ export default function LoginPage() {
     finally { setBusy(false) }
   }
 
-  return <div className="grid min-h-screen bg-[#f5f6f2] lg:grid-cols-[1.02fr_.98fr]">
-    <aside className="relative hidden overflow-hidden bg-[#173f31] p-12 text-white lg:flex lg:flex-col lg:justify-between">
+  return <div className="grid min-h-screen bg-[#f7f8f5] lg:grid-cols-[1.02fr_.98fr]">
+    <aside className="relative hidden overflow-hidden bg-[#2b5941] p-12 text-white lg:flex lg:flex-col lg:justify-between">
       <div className="absolute -right-24 -top-24 h-[420px] w-[420px] rounded-full border border-white/10" />
       <div className="absolute -right-8 -top-8 h-[290px] w-[290px] rounded-full border border-white/10" />
-      <Link to="/login" className="relative flex items-center gap-3"><span className="grid h-11 w-11 place-items-center rounded-2xl bg-[#c5e96c] text-[#173f31]"><CircleDollarSign /></span><span className="font-serif text-xl font-semibold">Pennywise</span></Link>
-      <div className="relative max-w-xl pb-10"><p className="mb-4 text-xs font-bold uppercase tracking-[.2em] text-[#b5d78a]">Your money, in perspective</p><h1 className="font-serif text-5xl font-semibold leading-[1.1]">Make room for what matters.</h1><p className="mt-5 max-w-md text-base leading-7 text-[#c1d2c7]">A calmer way to follow your spending, plan ahead, and build the habits you want.</p><div className="mt-10 flex items-center gap-3 text-sm text-[#b5c9bc]"><span className="grid h-9 w-9 place-items-center rounded-full bg-white/10"><LockKeyhole size={16} /></span>Private to your account. Clear by design.</div></div>
-      <p className="relative text-xs text-[#8fa898]">A little clarity goes a long way.</p>
+      <Link to="/login" aria-label="AVORA home" className="relative"><BrandLogo onDark subtitle markClassName="h-11 w-11 rounded-2xl" /></Link>
+      <div className="relative max-w-xl pb-10"><p className="mb-4 text-xs font-bold uppercase tracking-[.2em] text-[#b5d78a]">PERSONAL FINANCE, REIMAGINED</p><h1 className="font-serif text-5xl font-semibold leading-[1.1]">Your money.<br/>Your direction.</h1><p className="mt-5 max-w-md text-base leading-7 text-[#c1d2c7]">Understand your spending. Build better habits. Take control of your financial future.</p><div className="mt-10 flex items-center gap-3 text-sm text-[#b5c9bc]"><span className="grid h-9 w-9 place-items-center rounded-full bg-white/10"><LockKeyhole size={16} /></span>Private to your account. Clear by design.</div></div>
+      <p className="relative text-xs text-[#8fa898]">Your money. Your direction.</p>
     </aside>
     <main className="flex items-center justify-center px-5 py-10 sm:px-10">
       <section className="w-full max-w-[420px]">
-        <div className="mb-10 flex items-center gap-3 lg:hidden"><span className="grid h-10 w-10 place-items-center rounded-xl bg-[#173f31] text-[#c5e96c]"><CircleDollarSign size={22} /></span><span className="font-serif text-xl font-semibold">Pennywise</span></div>
+        <Link to="/" aria-label="AVORA home" className="mb-10 inline-flex lg:hidden"><BrandLogo /></Link>
         <p className="text-xs font-bold uppercase tracking-[.17em] text-[#75877b]">Welcome back</p><h2 className="mt-2 font-serif text-4xl font-semibold tracking-tight text-[#1d3327]">Sign in to your account</h2><p className="mt-3 text-sm text-[#7d8981]">Pick up where you left off.</p>
         <form onSubmit={submit} className="mt-8 space-y-5">
           <Field label="Email address" type="email" autoComplete="email" required value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" />
@@ -58,7 +59,7 @@ export default function LoginPage() {
         </form>
         <div className="my-5 flex items-center gap-3 text-xs text-[#9aa39d]"><span className="h-px flex-1 bg-[#e4e9e2]"/>or continue with<span className="h-px flex-1 bg-[#e4e9e2]"/></div>
         <GoogleSignInButton onClick={googleLogin} disabled={busy} />
-        <p className="mt-7 text-center text-sm text-[#7b8880]">New to Pennywise? <Link to="/signup" className="font-semibold text-[#47704c] hover:underline">Create an account</Link></p>
+        <p className="mt-7 text-center text-sm text-[#7b8880]">New to AVORA? <Link to="/signup" className="font-semibold text-[#47704c] hover:underline">Create an account</Link></p>
         <p className="mt-10 text-center text-xs leading-5 text-[#9aa39d]">Your finance data stays scoped to your Firebase account.</p>
       </section>
     </main>

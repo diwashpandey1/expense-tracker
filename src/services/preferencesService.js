@@ -4,9 +4,10 @@ import { requireDb } from '../lib/firebase'
 export const DEFAULT_PREFERENCES = {
   appearance: { theme: 'system', accent: 'lime', density: 'comfortable', fontSize: 'normal', sidebarCollapsed: false, animations: true },
   dashboard: {
-    widgets: { balance: true, income: true, expenses: true, savings: true, budgets: true, goals: true, recentTransactions: true, spendingBreakdown: true },
+    widgets: { balance: true, income: true, expenses: true, savings: true, budgets: true, goals: true, recentTransactions: true, spendingBreakdown: true, forecast: true, insights: true },
     defaultPeriod: 'monthly', analyticsChartType: 'pie', recentTransactionCount: 5, hideAmounts: false,
-    widgetOrder: ['balance', 'income', 'expenses', 'savings', 'budgets', 'goals', 'recentTransactions', 'spendingBreakdown'],
+    widgetOrder: ['balance', 'income', 'expenses', 'savings'],
+    widgetSizes: { balance: 'regular', income: 'regular', expenses: 'regular', savings: 'regular' },
   },
   transactions: { defaultType: 'expense', defaultAccountId: '', defaultCategoryId: '', dateFormat: 'iso', weekStartsOn: 'monday', listView: 'comfortable', sort: 'newest', confirmBeforeSave: false },
   budget: { warningThreshold: 80, defaultPeriod: 'monthly', progressDisplay: 'bar' },
@@ -40,6 +41,10 @@ export function normalizePreferences(saved = {}) {
   prefs.dashboard.recentTransactionCount = [5, 10, 20].includes(Number(prefs.dashboard.recentTransactionCount)) ? Number(prefs.dashboard.recentTransactionCount) : 5
   prefs.dashboard.hideAmounts = typeof prefs.dashboard.hideAmounts === 'boolean' ? prefs.dashboard.hideAmounts : false
   prefs.dashboard.widgets = Object.fromEntries(Object.entries(DEFAULT_PREFERENCES.dashboard.widgets).map(([key, fallback]) => [key, typeof prefs.dashboard.widgets?.[key] === 'boolean' ? prefs.dashboard.widgets[key] : fallback]))
+  const summaryWidgets = ['balance', 'income', 'expenses', 'savings']
+  const savedOrder = Array.isArray(prefs.dashboard.widgetOrder) ? prefs.dashboard.widgetOrder : []
+  prefs.dashboard.widgetOrder = [...new Set([...savedOrder.filter((key) => summaryWidgets.includes(key)), ...summaryWidgets])].slice(0, summaryWidgets.length)
+  prefs.dashboard.widgetSizes = Object.fromEntries(summaryWidgets.map((key) => [key, prefs.dashboard.widgetSizes?.[key] === 'wide' ? 'wide' : 'regular']))
   prefs.budget.warningThreshold = Math.min(99, Math.max(1, Number(prefs.budget.warningThreshold) || 80))
   delete prefs.budget.overspendingNotifications
   delete prefs.budget.goalReminders

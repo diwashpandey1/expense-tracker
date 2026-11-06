@@ -6,6 +6,10 @@ import { PreferencesProvider } from './context/PreferencesContext'
 import App from './App'
 import './index.css'
 
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('/service-worker.js').catch(() => {}))
+}
+
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <BrowserRouter>

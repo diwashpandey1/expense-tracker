@@ -16,6 +16,21 @@ const safeNumber = (value) => {
   return Number(amount)
 }
 
+function validateCategorySplits(lines, amount, kind) {
+  if (!Array.isArray(lines) || lines.length === 0) return null
+  if (kind !== 'expense' || lines.length < 2 || lines.length > 3) throw new Error('An expense can be split across two or three categories.')
+  const seen = new Set()
+  const normalized = lines.map((line) => {
+    if (!line.categoryId || !line.categoryName || !/^[1-9][0-9]{0,14}$/.test(String(line.amountMinor))) throw new Error('Each split needs a category and a positive amount.')
+    if (seen.has(line.categoryId)) throw new Error('Choose a different category for each split line.')
+    seen.add(line.categoryId)
+    return { categoryId: line.categoryId, categoryName: line.categoryName, amountMinor: String(line.amountMinor) }
+  })
+  const splitTotal = normalized.reduce((sum, line) => sum + BigInt(line.amountMinor), 0n)
+  if (splitTotal !== amount) throw new Error('Split amounts must add up to the transaction total.')
+  return normalized
+}
+
 export class InsufficientBalanceError extends Error {
   constructor(shortfallMinor, savingsAccounts) {
     super('This spending account does not have enough money. Confirm a transfer from savings to continue.')
@@ -172,6 +187,7 @@ function validateEventPayload(input) {
 
 export async function editFinancialEvent(uid, id, input) {
   const amount = validateEventPayload(input)
+  const categorySplits = validateCategorySplits(input.categorySplits, amount, input.kind)
   const db = requireDb()
   const entryRef = doc(userCollection(uid, 'ledgerEntries'), id)
   const txRef = doc(userCollection(uid, 'transactions'), id)
@@ -234,7 +250,7 @@ export async function editFinancialEvent(uid, id, input) {
     tx.set(operationRef, { uid, kind: 'transaction_edit', deltas: netDeltas, createdAt: serverTimestamp() })
     const storedInput = { ...input }
     delete storedInput.currencyCode
-    const updated = { ...old, ...storedInput, destinationAccountId: input.kind === 'transfer' ? input.destinationAccountId : null, savingsAccountId, lastOperationId: operationId, amountMinor: String(amount), postings: Object.entries(next).filter(([, delta]) => delta !== 0n).map(([accountId, delta]) => ({ accountId, deltaMinor: String(delta) })), updatedAt: serverTimestamp() }
+    const updated = { ...old, ...storedInput, categorySplits, destinationAccountId: input.kind === 'transfer' ? input.destinationAccountId : null, savingsAccountId, lastOperationId: operationId, amountMinor: String(amount), postings: Object.entries(next).filter(([, delta]) => delta !== 0n).map(([accountId, delta]) => ({ accountId, deltaMinor: String(delta) })), updatedAt: serverTimestamp() }
     tx.set(entryRef, updated)
     tx.set(txRef, updated)
     tx.set(auditRef, { action: 'transaction_edited', transactionId: id, before: old, createdAt: serverTimestamp() })
@@ -287,6 +303,7 @@ export async function voidFinancialEvent(uid, id) {
 
 export async function postFinancialEvent(uid, input, { savingsAccountId = null, operationId = crypto.randomUUID() } = {}) {
   const amount = toMinorBigInt(input.amountMinor)
+  const categorySplits = validateCategorySplits(input.categorySplits, amount, input.kind)
   if (amount <= 0n) throw new Error('Enter an amount greater than zero.')
   if (!isCalendarDate(input.occurredOn)) throw new Error('Choose a valid date.')
   if (!['income', 'expense', 'transfer'].includes(input.kind)) throw new Error('Choose a valid financial event type.')
@@ -384,6 +401,7 @@ export async function postFinancialEvent(uid, input, { savingsAccountId = null, 
       allocationAdjustments,
       categoryId: input.categoryId || null,
       categoryName: input.categoryName || null,
+      categorySplits,
       occurredOn: input.occurredOn,
       note: (input.note || '').trim(),
       postings,

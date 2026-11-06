@@ -25,7 +25,7 @@ export default function ResetPasswordPage() {
     }
   }
 
-  return <main className="grid min-h-screen place-items-center bg-[#f5f6f2] p-5">
+  return <main className="grid min-h-screen place-items-center bg-[#f7f8f5] p-5">
     <section className="w-full max-w-md rounded-3xl border border-[#e7ebe4] bg-white p-7 shadow-xl sm:p-9">
       <Link to="/login" className="mb-8 inline-flex items-center gap-2 text-sm font-semibold text-[#55715d]"><ArrowLeft size={16} />Back to sign in</Link>
       <span className="mb-6 grid h-11 w-11 place-items-center rounded-2xl bg-[#edf4e7] text-[#47704c]"><CircleDollarSign /></span>

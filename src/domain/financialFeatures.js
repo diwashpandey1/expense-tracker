@@ -1,4 +1,4 @@
-import { currentMonth, monthRange } from '../lib/dates'
+import { currentMonth, localDateString, monthRange } from '../lib/dates'
 
 export function amountForCategory(transaction, categoryId) {
   if (transaction.kind !== 'expense') return 0n
@@ -16,11 +16,12 @@ export function calculateSpendingInsights(transactions, now = new Date()) {
   const currentRange = monthRange(month)
   const previousRange = monthRange(previousMonth)
   const expenseTotal = (from, to) => transactions.reduce((sum, transaction) => transaction.kind === 'expense' && transaction.occurredOn >= from && transaction.occurredOn <= to ? sum + BigInt(transaction.amountMinor || '0') : sum, 0n)
-  const currentSpend = expenseTotal(currentRange.from, now.toISOString().slice(0, 10))
-  const previousSpend = expenseTotal(previousRange.from, previousRange.to)
+  const currentSpend = expenseTotal(currentRange.from, localDateString(now))
+  const previousComparableDate = new Date(previousDate.getFullYear(), previousDate.getMonth(), Math.min(now.getDate(), new Date(previousDate.getFullYear(), previousDate.getMonth() + 1, 0).getDate()))
+  const previousSpend = expenseTotal(previousRange.from, localDateString(previousComparableDate))
   const categoryTotals = new Map()
   for (const transaction of transactions) {
-    if (transaction.kind !== 'expense' || transaction.occurredOn < currentRange.from || transaction.occurredOn > currentRange.to) continue
+    if (transaction.kind !== 'expense' || transaction.occurredOn < currentRange.from || transaction.occurredOn > localDateString(now)) continue
     const lines = transaction.categorySplits?.length ? transaction.categorySplits : [{ categoryId: transaction.categoryId || 'other', categoryName: transaction.categoryName || 'Other', amountMinor: transaction.amountMinor }]
     for (const line of lines) {
       const key = line.categoryId || line.categoryName || 'other'

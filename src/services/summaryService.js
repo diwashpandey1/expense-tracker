@@ -28,10 +28,13 @@ export function summarizeByCategory(transactions) {
   const totals = new Map()
   for (const item of transactions) {
     if (item.kind !== 'expense') continue
-    const key = item.categoryId || item.categoryName || 'other'
-    const current = totals.get(key) ?? { name: item.categoryName || 'Other', amount: 0n }
-    current.amount += BigInt(item.amountMinor)
-    totals.set(key, current)
+    const lines = item.categorySplits?.length ? item.categorySplits : [{ categoryId: item.categoryId, categoryName: item.categoryName, amountMinor: item.amountMinor }]
+    for (const line of lines) {
+      const key = line.categoryId || line.categoryName || 'other'
+      const current = totals.get(key) ?? { name: line.categoryName || 'Other', amount: 0n }
+      current.amount += BigInt(line.amountMinor || '0')
+      totals.set(key, current)
+    }
   }
   return [...totals.values()].sort((a, b) => a.amount > b.amount ? -1 : 1)
 }
@@ -41,11 +44,14 @@ export function summarizeByKind(transactions, kind) {
   for (const item of transactions) {
     const matches = kind === 'savings' ? item.kind.startsWith('savings_') : item.kind === kind
     if (!matches) continue
-    const key = item.categoryId || item.categoryName || (kind === 'savings' ? item.goalId || 'savings' : 'other')
-    const current = totals.get(key) ?? { name: item.categoryName || (kind === 'savings' ? 'Savings' : 'Other'), amount: 0n }
-    const amount = BigInt(item.amountMinor)
-    current.amount += kind === 'savings' && item.kind === 'savings_withdrawal' ? -amount : amount
-    totals.set(key, current)
+    const lines = kind === 'expense' && item.categorySplits?.length ? item.categorySplits : [{ categoryId: item.categoryId, categoryName: item.categoryName, amountMinor: item.amountMinor }]
+    for (const line of lines) {
+      const key = line.categoryId || line.categoryName || (kind === 'savings' ? item.goalId || 'savings' : 'other')
+      const current = totals.get(key) ?? { name: line.categoryName || (kind === 'savings' ? 'Savings' : 'Other'), amount: 0n }
+      const amount = BigInt(line.amountMinor || '0')
+      current.amount += kind === 'savings' && item.kind === 'savings_withdrawal' ? -amount : amount
+      totals.set(key, current)
+    }
   }
   return [...totals.values()].filter((item) => item.amount > 0n).sort((a, b) => a.amount > b.amount ? -1 : a.amount < b.amount ? 1 : 0)
 }

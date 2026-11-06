@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import { Link, Navigate, useNavigate } from 'react-router-dom'
-import { ArrowRight, CircleDollarSign } from 'lucide-react'
+import { ArrowRight } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { Button, Field, InlineError, SelectField } from '../components/ui'
 import GoogleSignInButton from '../components/GoogleSignInButton'
+import BrandLogo from '../components/BrandLogo'
 
 const currencies = [['USD','US Dollar'],['NPR','Nepalese Rupee'],['INR','Indian Rupee'],['EUR','Euro'],['GBP','British Pound'],['AUD','Australian Dollar'],['CAD','Canadian Dollar'],['JPY','Japanese Yen']]
 
@@ -50,10 +51,10 @@ export default function SignupPage() {
     } finally { setBusy(false) }
   }
 
-  return <div className="grid min-h-screen bg-[#f5f6f2] lg:grid-cols-[.95fr_1.05fr]">
-    <aside className="hidden bg-[#173f31] p-12 text-white lg:flex lg:flex-col lg:justify-between"><Link to="/login" className="flex items-center gap-3"><span className="grid h-11 w-11 place-items-center rounded-2xl bg-[#c5e96c] text-[#173f31]"><CircleDollarSign /></span><span className="font-serif text-xl font-semibold">Pennywise</span></Link><div className="max-w-lg pb-12"><p className="mb-4 text-xs font-bold uppercase tracking-[.2em] text-[#b5d78a]">A fresh start</p><h1 className="font-serif text-5xl font-semibold leading-tight">Know where you are. Choose where you’re going.</h1><p className="mt-5 max-w-md text-base leading-7 text-[#c1d2c7]">Keep income, spending, and plans in one calm, private place.</p></div><p className="text-xs text-[#8fa898]">Personal finance, made clearer.</p></aside>
+  return <div className="grid min-h-screen bg-[#f7f8f5] lg:grid-cols-[.95fr_1.05fr]">
+    <aside className="hidden bg-[#2b5941] p-12 text-white lg:flex lg:flex-col lg:justify-between"><Link to="/login" aria-label="AVORA home"><BrandLogo onDark subtitle markClassName="h-11 w-11 rounded-2xl" /></Link><div className="max-w-lg pb-12"><p className="mb-4 text-xs font-bold uppercase tracking-[.2em] text-[#b5d78a]">PERSONAL FINANCE, REIMAGINED</p><h1 className="font-serif text-5xl font-semibold leading-tight">Your money. Your direction.</h1><p className="mt-5 max-w-md text-base leading-7 text-[#c1d2c7]">Understand your spending. Build better habits. Take control of your financial future.</p></div><p className="text-xs text-[#8fa898]">Your money. Your direction.</p></aside>
     <main className="flex items-center justify-center px-5 py-10 sm:px-10"><section className="w-full max-w-[440px]">
-      <div className="mb-8 flex items-center gap-3 lg:hidden"><span className="grid h-10 w-10 place-items-center rounded-xl bg-[#173f31] text-[#c5e96c]"><CircleDollarSign size={22} /></span><span className="font-serif text-xl font-semibold">Pennywise</span></div>
+      <Link to="/" aria-label="AVORA home" className="mb-8 inline-flex lg:hidden"><BrandLogo /></Link>
       <p className="text-xs font-bold uppercase tracking-[.17em] text-[#75877b]">Get started</p><h2 className="mt-2 font-serif text-4xl font-semibold tracking-tight text-[#1d3327]">Create your account</h2><p className="mt-3 text-sm text-[#7d8981]">Choose the currency you use for your finances.</p>
       <form onSubmit={submit} className="mt-7 space-y-4">
         <Field label="Your name" autoComplete="name" required maxLength={100} value={displayName} onChange={(event) => setDisplayName(event.target.value)} placeholder="Name" />

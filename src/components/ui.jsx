@@ -2,7 +2,7 @@ import { LoaderCircle, Plus } from 'lucide-react'
 
 export function Button({ children, variant = 'primary', className = '', ...props }) {
   const styles = {
-    primary: 'bg-[#173f31] text-white hover:bg-[#102f25] shadow-sm',
+    primary: 'bg-[#2b5941] text-white hover:bg-[#214731] shadow-sm',
     secondary: 'bg-white text-[#263a2f] border border-[#e0e6de] hover:bg-[#f8faf6]',
     subtle: 'text-[#52645a] hover:bg-[#eef2ec]',
     danger: 'bg-rose-50 text-rose-700 hover:bg-rose-100',
@@ -44,7 +44,7 @@ export function EmptyState({ icon: Icon, title, description, action }) {
 export function Field({ label, hint, error, className = '', ...props }) {
   return <label className={`block ${className}`}>
     <span className="mb-1.5 block text-sm font-medium text-[#34463b]">{label}</span>
-    <input className="min-w-0 w-full rounded-xl border border-[#dfe5dd] bg-white px-3.5 py-2.5 text-sm text-[#24352b] outline-none transition placeholder:text-[#a1aaa3] focus:border-[#648d57] focus:ring-4 focus:ring-[#668d571a] disabled:bg-[#f5f6f2]" {...props} />
+    <input className="min-w-0 w-full rounded-xl border border-[#dfe5dd] bg-white px-3.5 py-2.5 text-sm text-[#24352b] outline-none transition placeholder:text-[#a1aaa3] focus:border-[#648d57] focus:ring-4 focus:ring-[#668d571a] disabled:bg-[#f7f8f5]" {...props} />
     {error && <span className="mt-1 block text-xs text-rose-700">{error}</span>}
     {hint && <span className="mt-1 block text-xs text-[#88948b]">{hint}</span>}
   </label>

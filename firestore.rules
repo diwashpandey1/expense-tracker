@@ -26,6 +26,23 @@ service cloud.firestore {
         && get(path).data.name == snapshotName;
     }
 
+    function validCategorySplit(uid, line) {
+      return line is map
+        && line.keys().hasOnly(['categoryId', 'categoryName', 'amountMinor'])
+        && line.keys().hasAll(['categoryId', 'categoryName', 'amountMinor'])
+        && validAmount(line.amountMinor)
+        && validCategory(uid, line.categoryId, 'expense', line.categoryName);
+    }
+
+    function validCategorySplits(uid, splits) {
+      return splits is list
+        && splits.size() >= 2
+        && splits.size() <= 3
+        && validCategorySplit(uid, splits[0])
+        && validCategorySplit(uid, splits[1])
+        && (splits.size() < 3 || validCategorySplit(uid, splits[2]));
+    }
+
     function validGoal(uid, goalId, snapshotName) {
       let path = /databases/$(database)/documents/users/$(uid)/goals/$(goalId);
       return goalId is string
@@ -107,7 +124,14 @@ service cloud.firestore {
           && request.resource.data.appearance.animations is bool
           && request.resource.data.dashboard is map
           && request.resource.data.dashboard.widgets is map
-          && request.resource.data.dashboard.widgets.keys().hasOnly(['balance', 'income', 'expenses', 'savings', 'budgets', 'goals', 'recentTransactions', 'spendingBreakdown'])
+          && request.resource.data.dashboard.widgets.keys().hasOnly(['balance', 'income', 'expenses', 'savings', 'budgets', 'goals', 'recentTransactions', 'spendingBreakdown', 'forecast', 'insights'])
+          && request.resource.data.dashboard.widgetOrder is list
+          && request.resource.data.dashboard.widgetOrder.size() == 4
+          && request.resource.data.dashboard.widgetOrder.toSet() == ['balance', 'income', 'expenses', 'savings'].toSet()
+          && request.resource.data.dashboard.widgetSizes is map
+          && request.resource.data.dashboard.widgetSizes.keys().hasOnly(['balance', 'income', 'expenses', 'savings'])
+          && request.resource.data.dashboard.widgetSizes.keys().hasAll(['balance', 'income', 'expenses', 'savings'])
+          && request.resource.data.dashboard.widgetSizes.values().toSet().hasOnly(['regular', 'wide'])
           && request.resource.data.dashboard.defaultPeriod in ['weekly', 'monthly', 'yearly', 'lifetime']
           && request.resource.data.dashboard.analyticsChartType in ['pie', 'bar', 'line']
           && request.resource.data.dashboard.recentTransactionCount in [5, 10, 20]
@@ -311,12 +335,14 @@ service cloud.firestore {
           && validAmount(request.resource.data.amountMinor)
           && validDate(request.resource.data.occurredOn)
           && request.resource.data.postings is list
+          && (!('categorySplits' in request.resource.data.keys()) || request.resource.data.categorySplits == null || validCategorySplits(uid, request.resource.data.categorySplits))
           && request.resource.data.lastOperationId is string
           && existsAfter(/databases/$(database)/documents/users/$(uid)/financialOperations/$(request.resource.data.lastOperationId))
           && request.resource.data.createdAt == request.time
           && request.resource.data.updatedAt == request.time;
         allow update: if signedIn(uid)
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['kind', 'operationKind', 'amountMinor', 'accountId', 'destinationAccountId', 'savingsAccountId', 'allocationAdjustments', 'categoryId', 'categoryName', 'occurredOn', 'note', 'postings', 'lastOperationId', 'updatedAt', 'voided', 'voidedAt'])
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['kind', 'operationKind', 'amountMinor', 'accountId', 'destinationAccountId', 'savingsAccountId', 'allocationAdjustments', 'categoryId', 'categoryName', 'categorySplits', 'occurredOn', 'note', 'postings', 'lastOperationId', 'updatedAt', 'voided', 'voidedAt'])
+          && (!('categorySplits' in request.resource.data.keys()) || request.resource.data.categorySplits == null || validCategorySplits(uid, request.resource.data.categorySplits))
           && request.resource.data.updatedAt == request.time
           && validEventPosting(uid, request.resource.data.lastOperationId, request.resource.data.accountId)
           && (request.resource.data.destinationAccountId == null || validEventPosting(uid, request.resource.data.lastOperationId, request.resource.data.destinationAccountId))
@@ -382,7 +408,7 @@ service cloud.firestore {
 
       match /transactions/{transactionId} {
         allow create: if signedIn(uid)
-          && request.resource.data.keys().hasOnly(['kind', 'operationKind', 'amountMinor', 'accountId', 'destinationAccountId', 'savingsAccountId', 'allocationAdjustments', 'lastOperationId', 'occurredOn', 'categoryId', 'categoryName', 'goalId', 'goalName', 'note', 'postings', 'createdAt', 'updatedAt'])
+          && request.resource.data.keys().hasOnly(['kind', 'operationKind', 'amountMinor', 'accountId', 'destinationAccountId', 'savingsAccountId', 'allocationAdjustments', 'lastOperationId', 'occurredOn', 'categoryId', 'categoryName', 'categorySplits', 'goalId', 'goalName', 'note', 'postings', 'createdAt', 'updatedAt'])
           && request.resource.data.kind in ['income', 'expense', 'transfer']
           && validAmount(request.resource.data.amountMinor)
           && validDate(request.resource.data.occurredOn)
@@ -397,11 +423,13 @@ service cloud.firestore {
           && (request.resource.data.kind == 'transfer'
             ? validAccount(uid, request.resource.data.destinationAccountId)
             : validCategory(uid, request.resource.data.categoryId, request.resource.data.kind, request.resource.data.categoryName))
+          && (!('categorySplits' in request.resource.data.keys()) || request.resource.data.categorySplits == null || (request.resource.data.kind == 'expense' && validCategorySplits(uid, request.resource.data.categorySplits) && request.resource.data.categorySplits[0].categoryId == request.resource.data.categoryId && request.resource.data.categorySplits[0].categoryName == request.resource.data.categoryName))
           && request.resource.data.createdAt == request.time
           && request.resource.data.updatedAt == request.time;
         allow update: if signedIn(uid)
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['kind', 'operationKind', 'amountMinor', 'accountId', 'destinationAccountId', 'savingsAccountId', 'allocationAdjustments', 'occurredOn', 'categoryId', 'categoryName', 'goalId', 'goalName', 'note', 'postings', 'lastOperationId', 'updatedAt', 'voided', 'voidedAt'])
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['kind', 'operationKind', 'amountMinor', 'accountId', 'destinationAccountId', 'savingsAccountId', 'allocationAdjustments', 'occurredOn', 'categoryId', 'categoryName', 'categorySplits', 'goalId', 'goalName', 'note', 'postings', 'lastOperationId', 'updatedAt', 'voided', 'voidedAt'])
           && request.resource.data.updatedAt == request.time
+          && (!('categorySplits' in request.resource.data.keys()) || request.resource.data.categorySplits == null || (request.resource.data.kind == 'expense' && validCategorySplits(uid, request.resource.data.categorySplits) && request.resource.data.categorySplits[0].categoryId == request.resource.data.categoryId && request.resource.data.categorySplits[0].categoryName == request.resource.data.categoryName))
           && validEventPosting(uid, request.resource.data.lastOperationId, request.resource.data.accountId)
           && (request.resource.data.destinationAccountId == null || validEventPosting(uid, request.resource.data.lastOperationId, request.resource.data.destinationAccountId))
           && (request.resource.data.savingsAccountId == null || validEventPosting(uid, request.resource.data.lastOperationId, request.resource.data.savingsAccountId));
