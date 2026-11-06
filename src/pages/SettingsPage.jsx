@@ -7,8 +7,8 @@ import { Button, Card, Field, InlineError, Modal, PageHeading } from '../compone
 import { resetFinanceData } from '../services/dataLifecycleService'
 import { listAccounts } from '../services/ledgerService'
 import { listCategories } from '../services/categoryService'
+import { SUPPORTED_CURRENCIES } from '../constants/currencies'
 
-const currencies = ['USD','EUR','GBP','INR','NPR','AUD','CAD','JPY','CNY','SGD','CHF','NZD']
 const sections = [
   { id: 'profile', label: 'Profile & account', icon: UserRound },
   { id: 'appearance', label: 'Appearance', icon: Palette },
@@ -21,11 +21,10 @@ const sections = [
 
 export default function SettingsPage() {
   const { user, profile, logout, resetPassword, updateAccountProfile, deleteAccount } = useAuth()
-  const { preferences: p, loading: prefsLoading, error: prefsLoadError, savedAt, updatePreferences, resetPreferences } = usePreferences()
+  const { preferences: p, loading: prefsLoading, error: prefsLoadError, savedAt, updatePreferences, resetPreferences, currencyRateInfo, currencyRateLoading, currencyRateError, syncRatesNow } = usePreferences()
   const navigate = useNavigate()
   const [section, setSection] = useState('profile')
   const [name, setName] = useState(profile.displayName)
-  const [currency, setCurrency] = useState(profile.currencyCode)
   const [accounts, setAccounts] = useState([])
   const [categories, setCategories] = useState([])
   const [busy, setBusy] = useState(false)
@@ -36,6 +35,14 @@ export default function SettingsPage() {
   const [password, setPassword] = useState('')
   const [resetPhrase, setResetPhrase] = useState('')
   const [actionBusy, setActionBusy] = useState(false)
+  const [clockNow, setClockNow] = useState(0)
+
+  useEffect(() => {
+    const tick = () => setClockNow(Date.now())
+    tick()
+    const timer = window.setInterval(tick, 60_000)
+    return () => window.clearInterval(timer)
+  }, [])
 
   useEffect(() => {
     let active = true
@@ -54,7 +61,7 @@ export default function SettingsPage() {
 
   async function saveProfile(event) {
     event.preventDefault(); setBusy(true); setError(''); setNotice('')
-    try { await updateAccountProfile({ displayName: name, currencyCode: currency }); setNotice('Your profile was saved. Existing amounts were not converted.') }
+    try { await updateAccountProfile({ displayName: name, currencyCode: profile.currencyCode }); setNotice('Your profile was saved. The account currency remains unchanged.') }
     catch (caught) { setError(caught.message || 'Could not save your profile.') }
     finally { setBusy(false) }
   }
@@ -102,7 +109,8 @@ export default function SettingsPage() {
             <form onSubmit={saveProfile} className="space-y-4">
               <div className="flex items-center gap-3"><span className="grid h-12 w-12 place-items-center rounded-2xl bg-[#dcecc9] font-bold text-[#365a3b]">{initials || 'U'}</span><div><p className="font-semibold text-[#293e31]">{profile.displayName}</p><p className="text-sm text-[#849087]">{profile.email}</p></div></div>
               <Field label="Display name" value={name} onChange={(event) => setName(event.target.value)} maxLength={80} required/>
-              <label className="block"><span className="mb-1.5 block text-sm font-medium text-[#34463b]">Display currency</span><select className="w-full rounded-xl border border-[#dfe5dd] bg-white px-3.5 py-2.5 text-sm" value={currency} onChange={(event) => setCurrency(event.target.value)}>{currencies.map((code) => <option key={code}>{code}</option>)}</select><span className="mt-1 block text-xs text-[#87938a]">This only changes display formatting; stored transactions are not converted.</span></label>
+              <label className="block"><span className="mb-1.5 block text-sm font-medium text-[#34463b]">Display currency</span><select className="w-full rounded-xl border border-[#dfe5dd] bg-white px-3.5 py-2.5 text-sm" value={p.currency.displayCurrency} onChange={(event) => change('currency', { displayCurrency: event.target.value })}>{SUPPORTED_CURRENCIES.map((code) => <option key={code}>{code}</option>)}</select><span className="mt-1 block text-xs text-[#87938a]">Totals convert from your account currency ({profile.currencyCode}); entries and account balances stay stored in that original currency.</span></label>
+              <div className="rounded-xl border border-[#e8ebe5] bg-[#f8faf6] p-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-sm font-semibold text-[#34463b]">Exchange-rate sync</p><p className="mt-1 text-xs leading-5 text-[#849087]">Rates for {profile.currencyCode} to the supported currencies are saved to your account and can sync once every seven days.</p>{currencyRateInfo?.rateDate && <p className="mt-1 text-xs text-[#718177]">Provider rate date: {new Date(currencyRateInfo.rateDate).toLocaleDateString()} · {currencyRateInfo.stale ? 'Using saved rates while refresh is unavailable.' : 'Saved rates are active.'}</p>}{currencyRateInfo?.nextSyncAt && <p className="mt-1 text-xs text-[#718177]">Next sync available: {new Date(currencyRateInfo.nextSyncAt).toLocaleString()}</p>}{currencyRateError && <p role="status" className="mt-2 text-xs text-amber-800">{currencyRateError}{!currencyRateInfo?.rates?.[p.currency.displayCurrency] ? ` Amounts are currently shown in ${profile.currencyCode}.` : ' The last saved exchange rates are still being used.'}</p>}</div><Button variant="secondary" disabled={currencyRateLoading || Boolean(currencyRateInfo?.nextSyncAt && clockNow < currencyRateInfo.nextSyncAt)} onClick={() => syncRatesNow().then(() => setNotice('Exchange rates were synced.')).catch((caught) => setError(caught.message || 'Could not sync exchange rates.'))}>{currencyRateLoading ? 'Syncing…' : 'Sync rates'}</Button></div></div>
               <Button disabled={busy}><Save size={16}/>{busy ? 'Saving…' : 'Save profile'}</Button>
             </form>
             <div className="grid gap-3 rounded-xl bg-[#f6f8f4] p-4 sm:grid-cols-2"><Info label="Sign-in email" value={profile.email}/><Info label="Account created" value={user.metadata.creationTime ? new Date(user.metadata.creationTime).toLocaleDateString() : 'Not available'}/><Info label="Sign-in provider" value={user.providerData.map((provider) => provider.providerId === 'google.com' ? 'Google' : 'Email and password').join(', ') || 'Firebase Authentication'}/></div>

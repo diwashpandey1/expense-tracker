@@ -1,7 +1,7 @@
 import { collection, deleteDoc, doc, documentId, getDocs, limit, orderBy, query, startAfter, writeBatch } from 'firebase/firestore'
 import { requireDb } from '../lib/firebase'
 
-const USER_COLLECTIONS = ['transactions', 'ledgerEntries', 'financialOperations', 'auditEvents', 'accounts', 'goalAllocations', 'financeState', 'settings', 'recurringSchedules', 'recurringOccurrences', 'budgets', 'goals', 'categories']
+const USER_COLLECTIONS = ['transactions', 'ledgerEntries', 'financialOperations', 'auditEvents', 'accounts', 'goalAllocations', 'financeState', 'settings', 'recurringSchedules', 'recurringOccurrences', 'budgets', 'goals', 'categories', 'currencyRates']
 
 async function clearCollection(uid, collectionName) {
   const db = requireDb()

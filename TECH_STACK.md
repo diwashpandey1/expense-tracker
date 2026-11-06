@@ -9,7 +9,7 @@
 - Recharts for analytics.
 - Firebase JavaScript SDK: Authentication and Cloud Firestore.
 - Firebase Hosting for the static single-page application.
-- Frankfurter public API for no-key daily reference exchange rates in the standalone converter only; no user data is sent.
+- CurrencyAPI for signed-in app display conversions; Frankfurter remains the no-key source for the standalone calculator. Only currency codes are sent to either provider.
 - Firestore Security Rules and Emulator Suite for authorization/testing.
 - Vitest, Testing Library, and rules-unit-testing.
 - No custom server/API, SQL database, Cloud Functions, or Storage.
@@ -26,7 +26,7 @@
 
 **Financial redesign status:** The approved stack remains Firebase Auth + Firestore + Hosting on Spark. No service is being added to solve the ledger design. Client-only recurring processing, if implemented, cannot run while all browsers are closed; due items must be handled idempotently when a user returns. Firestore Rules do not aggregate an arbitrary ledger, so atomic account operations must validate paired postings and disclose any residual limitation. See `IMPLEMENTATION_REPORT.md` for the work currently implemented; accounts, transfers, recurring records, and account-backed goals are not yet live in the app.
 
-**Currency conversion — public data API, not Firebase.** The original app called a keyed exchange-rate provider from browser code. The new calculator uses Frankfurter's public v2 rate endpoint, which currently requires no key and publishes no daily/monthly quota. It serves indicative rates from central-bank and other official sources. The service can still rate-limit abusive traffic or be unavailable; show failure states and use another no-key data source or a manual rate if needed. Rates are not trading quotes. See https://frankfurter.dev/.
+**Currency conversion — CurrencyAPI + Firestore cache.** The app reads `VITE_CURRENCY_API_KEY` from the user's fresh local Vite environment and calls CurrencyAPI `/v3/latest` directly with the key in the `apikey` request header. The current 12 supported app currencies are requested in one call per base currency; a full base-to-target rate table is cached under the user's `currencyRates/{baseCurrency}` document. The app syncs at most once per seven days for each base currency, with Firestore Rules enforcing the same wait between updates. The provider's dataset varies by plan and may be unavailable or missing a supported pair; in that case the previous cached rates remain in use, or the UI keeps showing original account currency if no cache exists. Rates are indicative, not trading quotes. The API key is a browser-side Vite value and is not a server secret. See https://currencyapi.com/docs/latest/.
 
 Plan and quotas checked 2026-11-06. Firebase may change limits; recheck official docs before release:
 - https://firebase.google.com/docs/projects/billing/firebase-pricing-plans
@@ -38,3 +38,5 @@ Plan and quotas checked 2026-11-06. Firebase may change limits; recheck official
 ## Configuration
 
 Fresh Firebase client values come from Vite environment variables. Browser Firebase config is public client configuration, not an Admin secret. Actual .env is local and Git-ignored; .env.example contains placeholders only. No old project IDs or credentials are referenced. Never configure a Storage bucket in app code.
+
+The currency key uses the existing `VITE_CURRENCY_API_KEY` environment entry. It is sent only to CurrencyAPI and must not be copied into source files or Firestore records.

@@ -1,5 +1,6 @@
 import { doc, runTransaction, serverTimestamp } from 'firebase/firestore'
 import { requireDb } from '../lib/firebase'
+import { SUPPORTED_CURRENCIES } from '../constants/currencies'
 
 export const DEFAULT_PREFERENCES = {
   appearance: { theme: 'system', accent: 'lime', density: 'comfortable', fontSize: 'normal', sidebarCollapsed: false, animations: true },
@@ -13,6 +14,7 @@ export const DEFAULT_PREFERENCES = {
   budget: { warningThreshold: 80, defaultPeriod: 'monthly', progressDisplay: 'bar' },
   notifications: { budgetThreshold: true, overspending: true, recurringReminders: true, savingsGoalReminders: true, monthlySummary: false },
   privacy: { hideBalances: false },
+  currency: { displayCurrency: '' },
 }
 
 const settingsRef = (uid) => doc(requireDb(), 'users', uid, 'settings', 'preferences')
@@ -26,12 +28,15 @@ function mergeDeep(base, patch) {
   ]))
 }
 
-export function normalizePreferences(saved = {}) {
+export function normalizePreferences(saved = {}, baseCurrency = 'USD', fallbackDisplayCurrency = baseCurrency) {
   const safeSaved = Object.fromEntries(Object.keys(DEFAULT_PREFERENCES).map((section) => [
     section,
     saved[section] && typeof saved[section] === 'object' && !Array.isArray(saved[section]) ? saved[section] : {},
   ]))
   const prefs = mergeDeep(DEFAULT_PREFERENCES, safeSaved)
+  prefs.currency.displayCurrency = SUPPORTED_CURRENCIES.includes(prefs.currency.displayCurrency)
+    ? prefs.currency.displayCurrency
+    : SUPPORTED_CURRENCIES.includes(fallbackDisplayCurrency) ? fallbackDisplayCurrency : SUPPORTED_CURRENCIES.includes(baseCurrency) ? baseCurrency : 'USD'
   if (!['light', 'dark', 'system'].includes(prefs.appearance.theme)) prefs.appearance.theme = 'system'
   if (!['lime', 'sage', 'blue', 'rose', 'violet'].includes(prefs.appearance.accent)) prefs.appearance.accent = 'lime'
   if (!['compact', 'comfortable'].includes(prefs.appearance.density)) prefs.appearance.density = 'comfortable'
@@ -65,24 +70,29 @@ export function normalizePreferences(saved = {}) {
   return prefs
 }
 
-export async function readPreferences(uid) {
+export async function readPreferences(uid, baseCurrency = 'USD', fallbackDisplayCurrency = baseCurrency) {
   return runTransaction(requireDb(), async (tx) => {
     const ref = settingsRef(uid)
     const snapshot = await tx.get(ref)
-    if (snapshot.exists()) return normalizePreferences(snapshot.data())
-    const defaults = normalizePreferences()
+    if (snapshot.exists()) {
+      const saved = snapshot.data()
+      const normalized = normalizePreferences(saved, baseCurrency, fallbackDisplayCurrency)
+      if (!SUPPORTED_CURRENCIES.includes(saved.currency?.displayCurrency)) tx.set(ref, { ...normalized, updatedAt: serverTimestamp() })
+      return normalized
+    }
+    const defaults = normalizePreferences({}, baseCurrency, fallbackDisplayCurrency)
     tx.set(ref, { ...defaults, updatedAt: serverTimestamp() })
     return defaults
   })
 }
 
-export async function savePreferences(uid, section, patch) {
+export async function savePreferences(uid, section, patch, baseCurrency = 'USD') {
   if (!Object.hasOwn(DEFAULT_PREFERENCES, section)) throw new Error('Choose a valid preferences section.')
   return runTransaction(requireDb(), async (tx) => {
     const ref = settingsRef(uid)
     const snapshot = await tx.get(ref)
-    const current = normalizePreferences(snapshot.exists() ? snapshot.data() : {})
-    const next = normalizePreferences({ ...current, [section]: mergeDeep(current[section], patch) })
+    const current = normalizePreferences(snapshot.exists() ? snapshot.data() : {}, baseCurrency)
+    const next = normalizePreferences({ ...current, [section]: mergeDeep(current[section], patch) }, baseCurrency)
     const accountId = next.transactions.defaultAccountId
     const categoryId = next.transactions.defaultCategoryId
     const accountSnapshot = accountId ? await tx.get(doc(requireDb(), 'users', uid, 'accounts', accountId)) : null

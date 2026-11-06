@@ -5,7 +5,7 @@
 - Firestore is the sole application database.
 - All records are under users/{uid}/{collection}/{documentId}; UID is the Firebase Auth UID and is enforced by rules.
 - Money uses positive integer minor units encoded as decimal strings, such as "12345". Arithmetic uses BigInt.
-- A user selects one ISO 4217 currency during profile creation and may change the display currency later. Existing amount values are never converted when that preference changes.
+- A user selects one ISO 4217 account/source currency during profile creation and may choose a separate display currency. Ledger amounts remain in the source currency; the formatter converts them using a cached rate without changing stored amounts.
 - occurredOn and month are YYYY-MM-DD calendar-date strings. createdAt/updatedAt use Firestore server timestamps.
 - No document stores an avatar URL, image path, or uploaded file metadata.
 
@@ -15,7 +15,7 @@ Fields: uid, email, displayName, currencyCode, createdAt, updatedAt. Authenticat
 
 ## users/{uid}/settings/preferences
 
-One document (`preferences`) stores normalized user options, with `updatedAt` set by a Firestore server timestamp. Top-level maps are `appearance`, `dashboard`, `transactions`, `budget`, `notifications`, and `privacy`. Defaults: system theme, lime accent, comfortable density, normal font size, expanded sidebar, animations enabled; all dashboard widgets visible, monthly default dashboard period, pie analytics chart, five recent transactions, amounts visible; expense transaction type, no fixed account/category, ISO dates, Monday week start, comfortable list, newest sort, no save confirmation; 80% budget warning threshold, monthly budget period, bar progress; in-app alert types enabled except monthly summary; balance hiding off. Dashboard periods also support weekly/yearly/lifetime. Account/category defaults are IDs, checked against the owner's active account/non-archived category records, and fall back when unusable.
+One document (`preferences`) stores normalized user options, with `updatedAt` set by a Firestore server timestamp. Top-level maps are `appearance`, `dashboard`, `transactions`, `budget`, `notifications`, `privacy`, and `currency` (`displayCurrency`). Defaults: system theme, lime accent, comfortable density, normal font size, expanded sidebar, animations enabled; all dashboard widgets visible, monthly default dashboard period, pie analytics chart, five recent transactions, amounts visible; expense transaction type, no fixed account/category, ISO dates, Monday week start, comfortable list, newest sort, no save confirmation; 80% budget warning threshold, monthly budget period, bar progress; in-app alert types enabled except monthly summary; balance hiding off. Dashboard periods also support weekly/yearly/lifetime. Account/category defaults are IDs, checked against the owner's active account/non-archived category records, and fall back when unusable.
 
 Preferences are loaded and saved by `PreferencesProvider` through a Firestore transaction. Section patches merge with existing values; old or invalid values normalize to defaults. Firestore Rules scope read/write/delete to `request.auth.uid` and validate supported fields/enums and references. Preferences affect display, reminders, or new-entry defaults only; they never alter historical transaction dates, amounts, categories, budgets, or balances. Budgets support monthly and yearly periods; changing the default affects the selected period for new budget work but does not convert existing limits. Reset removes this document and resets the active app session to defaults; account deletion removes it with the rest of the user's records.
 
@@ -23,9 +23,12 @@ Preferences are loaded and saved by `PreferencesProvider` through a Firestore tr
 
 Fields: kind (income|expense|saving), name (1–60 chars), normalizedName, isArchived, isDefault, createdAt, updatedAt. The original project's 18 expense, 8 income, and 9 saving defaults are seeded for each user. Existing accounts receive missing defaults when categories are first read; existing category IDs are kept. Used categories are archived to preserve transaction history. Rules require valid fields and owner path.
 
+## users/{uid}/currencyRates/{baseCurrency}
+
+One document per supported source currency stores a `rates` map from each of the 12 app currency codes to the number of target units per one source unit, plus `baseCurrency`, the provider `rateDate`, and server `syncedAt`/`updatedAt` timestamps. Firestore Rules allow a rate document to be updated only after seven days; the client also checks the timestamp before making a provider request. Changing display currency reuses this map and does not write a second rate record per pair. These cached rates are display-only and do not change transaction, budget, goal, or account minor-unit amounts.
 ## users/{uid}/transactions/{transactionId}
 
-Legacy records retain their original shape: kind (income|expense|savings_contribution|savings_withdrawal), amountMinor, occurredOn, category/goal snapshots, note, timestamps. New account-backed records are mirrored here for the transaction UI and also stored in `ledgerEntries`; they add accountId, destinationAccountId, savingsAccountId, signed postings, operationKind, allocationAdjustments, lastOperationId, and optional void metadata. A void is retained and hidden from normal transaction views; the ledger entry is reversed atomically.
+Legacy records retain their original shape: kind (income|expense|savings_contribution|savings_withdrawal), amountMinor, occurredOn, category/goal snapshots, note, timestamps. New account-backed records are mirrored here for the transaction UI and also stored in `ledgerEntries`; they add accountId, destinationAccountId, savingsAccountId, signed postings, `currencyCode` (the original account currency), operationKind, allocationAdjustments, lastOperationId, and optional void metadata. A void is retained and hidden from normal transaction views; the ledger entry is reversed atomically.
 
 ## users/{uid}/budgets/{budgetId}
 

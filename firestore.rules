@@ -17,6 +17,15 @@ service cloud.firestore {
       return value is string && value.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$');
     }
 
+    function supportedCurrency(value) {
+      return value in ['USD', 'EUR', 'GBP', 'INR', 'NPR', 'AUD', 'CAD', 'JPY', 'CNY', 'SGD', 'CHF', 'NZD'];
+    }
+
+    function validAccountCurrency(uid, accountId, currencyCode) {
+      let path = /databases/$(database)/documents/users/$(uid)/accounts/$(accountId);
+      return currencyCode is string && exists(path) && get(path).data.currencyCode == currencyCode;
+    }
+
     function validCategory(uid, categoryId, kind, snapshotName) {
       let path = /databases/$(database)/documents/users/$(uid)/categories/$(categoryId);
       return categoryId is string
@@ -112,8 +121,8 @@ service cloud.firestore {
         allow read: if signedIn(uid);
         allow create, update: if signedIn(uid)
           && settingId == 'preferences'
-          && request.resource.data.keys().hasOnly(['appearance', 'dashboard', 'transactions', 'budget', 'notifications', 'privacy', 'updatedAt'])
-          && request.resource.data.keys().hasAll(['appearance', 'dashboard', 'transactions', 'budget', 'notifications', 'privacy', 'updatedAt'])
+          && request.resource.data.keys().hasOnly(['appearance', 'dashboard', 'transactions', 'budget', 'notifications', 'privacy', 'currency', 'updatedAt'])
+          && request.resource.data.keys().hasAll(['appearance', 'dashboard', 'transactions', 'budget', 'notifications', 'privacy', 'currency', 'updatedAt'])
           && request.resource.data.updatedAt == request.time
           && request.resource.data.appearance is map
           && request.resource.data.appearance.theme in ['light', 'dark', 'system']
@@ -136,6 +145,10 @@ service cloud.firestore {
           && request.resource.data.dashboard.analyticsChartType in ['pie', 'bar', 'line']
           && request.resource.data.dashboard.recentTransactionCount in [5, 10, 20]
           && request.resource.data.dashboard.hideAmounts is bool
+          && request.resource.data.currency is map
+          && request.resource.data.currency.keys().hasOnly(['displayCurrency'])
+          && request.resource.data.currency.displayCurrency is string
+          && supportedCurrency(request.resource.data.currency.displayCurrency)
           && request.resource.data.transactions is map
           && request.resource.data.transactions.defaultType in ['income', 'expense', 'transfer']
           && request.resource.data.transactions.defaultAccountId is string
@@ -335,6 +348,7 @@ service cloud.firestore {
           && validAmount(request.resource.data.amountMinor)
           && validDate(request.resource.data.occurredOn)
           && request.resource.data.postings is list
+          && (!('currencyCode' in request.resource.data.keys()) || validAccountCurrency(uid, request.resource.data.accountId, request.resource.data.currencyCode))
           && (!('categorySplits' in request.resource.data.keys()) || request.resource.data.categorySplits == null || validCategorySplits(uid, request.resource.data.categorySplits))
           && request.resource.data.lastOperationId is string
           && existsAfter(/databases/$(database)/documents/users/$(uid)/financialOperations/$(request.resource.data.lastOperationId))
@@ -347,6 +361,34 @@ service cloud.firestore {
           && validEventPosting(uid, request.resource.data.lastOperationId, request.resource.data.accountId)
           && (request.resource.data.destinationAccountId == null || validEventPosting(uid, request.resource.data.lastOperationId, request.resource.data.destinationAccountId))
           && (request.resource.data.savingsAccountId == null || validEventPosting(uid, request.resource.data.lastOperationId, request.resource.data.savingsAccountId));
+        allow delete: if signedIn(uid);
+      }
+
+      match /currencyRates/{baseCurrency} {
+        allow read: if signedIn(uid);
+        allow create: if signedIn(uid)
+          && supportedCurrency(baseCurrency)
+          && request.resource.data.keys().hasOnly(['baseCurrency', 'rates', 'rateDate', 'syncedAt', 'updatedAt'])
+          && request.resource.data.keys().hasAll(['baseCurrency', 'rates', 'rateDate', 'syncedAt', 'updatedAt'])
+          && request.resource.data.baseCurrency == baseCurrency
+          && request.resource.data.rates is map
+          && request.resource.data.rates.keys().hasOnly(['USD', 'EUR', 'GBP', 'INR', 'NPR', 'AUD', 'CAD', 'JPY', 'CNY', 'SGD', 'CHF', 'NZD'])
+          && request.resource.data.rates.keys().hasAll(['USD', 'EUR', 'GBP', 'INR', 'NPR', 'AUD', 'CAD', 'JPY', 'CNY', 'SGD', 'CHF', 'NZD'])
+          && request.resource.data.rateDate is string
+          && request.resource.data.syncedAt == request.time
+          && request.resource.data.updatedAt == request.time;
+        allow update: if signedIn(uid)
+          && supportedCurrency(baseCurrency)
+          && request.resource.data.keys().hasOnly(['baseCurrency', 'rates', 'rateDate', 'syncedAt', 'updatedAt'])
+          && request.resource.data.keys().hasAll(['baseCurrency', 'rates', 'rateDate', 'syncedAt', 'updatedAt'])
+          && request.resource.data.baseCurrency == baseCurrency
+          && request.resource.data.rates is map
+          && request.resource.data.rates.keys().hasOnly(['USD', 'EUR', 'GBP', 'INR', 'NPR', 'AUD', 'CAD', 'JPY', 'CNY', 'SGD', 'CHF', 'NZD'])
+          && request.resource.data.rates.keys().hasAll(['USD', 'EUR', 'GBP', 'INR', 'NPR', 'AUD', 'CAD', 'JPY', 'CNY', 'SGD', 'CHF', 'NZD'])
+          && request.resource.data.rateDate is string
+          && request.resource.data.syncedAt == request.time
+          && request.resource.data.updatedAt == request.time
+          && request.time >= resource.data.syncedAt + duration.value(7, 'd');
         allow delete: if signedIn(uid);
       }
 
@@ -408,12 +450,13 @@ service cloud.firestore {
 
       match /transactions/{transactionId} {
         allow create: if signedIn(uid)
-          && request.resource.data.keys().hasOnly(['kind', 'operationKind', 'amountMinor', 'accountId', 'destinationAccountId', 'savingsAccountId', 'allocationAdjustments', 'lastOperationId', 'occurredOn', 'categoryId', 'categoryName', 'categorySplits', 'goalId', 'goalName', 'note', 'postings', 'createdAt', 'updatedAt'])
+          && request.resource.data.keys().hasOnly(['kind', 'operationKind', 'amountMinor', 'accountId', 'destinationAccountId', 'savingsAccountId', 'allocationAdjustments', 'lastOperationId', 'occurredOn', 'categoryId', 'categoryName', 'categorySplits', 'goalId', 'goalName', 'note', 'postings', 'currencyCode', 'createdAt', 'updatedAt'])
           && request.resource.data.kind in ['income', 'expense', 'transfer']
           && validAmount(request.resource.data.amountMinor)
           && validDate(request.resource.data.occurredOn)
           && request.resource.data.note is string && request.resource.data.note.size() <= 500
           && validAccount(uid, request.resource.data.accountId)
+          && (!('currencyCode' in request.resource.data.keys()) || validAccountCurrency(uid, request.resource.data.accountId, request.resource.data.currencyCode))
           && request.resource.data.lastOperationId == transactionId
           && existsAfter(/databases/$(database)/documents/users/$(uid)/ledgerEntries/$(transactionId))
           && existsAfter(/databases/$(database)/documents/users/$(uid)/financialOperations/$(transactionId))

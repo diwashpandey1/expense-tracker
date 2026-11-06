@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Archive, Pencil, Plus, WalletCards } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
+import { usePreferences } from '../context/PreferencesContext'
 import { formatMoney, parseMoneyToMinor } from '../lib/money'
 import { formatDateForDisplay } from '../lib/dates'
 import { adjustAccountBalance, archiveAccount, createAccount, listAccountHistory, listAccounts, updateAccount } from '../services/ledgerService'
@@ -10,6 +11,7 @@ const blank = () => ({ name: '', accountType: 'bank', classification: 'spending'
 
 export default function AccountsPage() {
   const { user, profile } = useAuth()
+  usePreferences()
   const [accounts, setAccounts] = useState([])
   const [loading, setLoading] = useState(true)
   const [form, setForm] = useState(null)

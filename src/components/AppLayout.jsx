@@ -1,6 +1,6 @@
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
-import { Activity, ArrowDownLeft, BarChart3, ChevronDown, Command, LayoutDashboard, LogOut, Menu, Tags, Target, WalletCards, Landmark, CalendarClock } from 'lucide-react'
+import { ArrowDownLeft, BarChart3, ChevronDown, Command, LayoutDashboard, LogOut, Menu, Tags, Target, WalletCards, Landmark, CalendarClock } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { usePreferences } from '../context/PreferencesContext'
@@ -25,7 +25,7 @@ function InitialAvatar({ name }) {
 
 export default function AppLayout() {
   const { user, profile, logout } = useAuth()
-  const { preferences } = usePreferences()
+  const { preferences, displayCurrency } = usePreferences()
   const [menuOpen, setMenuOpen] = useState(false)
   const [userMenuOpen, setUserMenuOpen] = useState(false)
   const collapsed = preferences.appearance.sidebarCollapsed && !menuOpen
@@ -65,7 +65,7 @@ export default function AppLayout() {
         <button onClick={() => setMenuOpen(true)} className="rounded-xl p-2 text-[#40584a] hover:bg-[#e9eee6] lg:hidden" aria-label="Open navigation"><Menu size={21} /></button>
         <div className="hidden items-center gap-2 text-xs text-[#86938a] sm:flex"><Command size={14} /><span>Money, made clearer</span></div>
         <div className="ml-auto flex items-center gap-3">
-          <span className="hidden rounded-lg bg-[#eef3e9] px-2.5 py-1.5 text-xs font-semibold text-[#4c6b4d] sm:inline-flex">{profile?.currencyCode || 'USD'}</span>
+          <span title={`Display currency · account currency ${profile?.currencyCode || 'USD'}`} className="hidden rounded-lg bg-[#eef3e9] px-2.5 py-1.5 text-xs font-semibold text-[#4c6b4d] sm:inline-flex">{displayCurrency || profile?.currencyCode || 'USD'}</span>
           <div className="relative">
             <button onClick={() => setUserMenuOpen((open) => !open)} className="flex items-center gap-2 rounded-full p-1 pr-2 hover:bg-[#edf0ea]" aria-expanded={userMenuOpen} aria-label="Account menu"><InitialAvatar name={profile?.displayName} /><ChevronDown size={14} className="text-[#718077]" /></button>
             {userMenuOpen && <div className="absolute right-0 top-12 w-48 rounded-xl border border-[#e5e9e2] bg-white p-1.5 shadow-xl"><button onClick={() => { navigate('/app/settings'); setUserMenuOpen(false) }} className="w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-[#f3f6f0]">Settings</button><button onClick={handleLogout} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-rose-700 hover:bg-rose-50"><LogOut size={15} />Sign out</button></div>}
