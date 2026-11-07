@@ -13,7 +13,7 @@
     {
       "binding": "CURRENCY_RATES",
       // Create a KV namespace, then replace this value with its ID.
-      "id": "replace-with-currency-rates-kv-namespace-id"
+      "id": "d8f3ab2a78fb4615b1ef78183d61195a"
     }
   ],
   "triggers": {
