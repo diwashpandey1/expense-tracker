@@ -43,7 +43,12 @@ async function refreshExpiredSnapshot(env) {
   const retry = await env.CURRENCY_RATES.get(RETRY_KEY, 'json')
   if (Number(retry?.retryAfter) > Date.now()) {
     if (saved) return saved
-    throw new Error(retry?.lastError || 'Rate synchronization is in its retry window.')
+    // A prior deployment may have backed off while the API key was missing.
+    // Once a key is present, do not let that stale configuration failure block
+    // the first successful initialization attempt.
+    if (!String(retry?.lastError || '').includes('CurrencyAPI secret is not configured')) {
+      throw new Error(retry?.lastError || 'Rate synchronization is in its retry window.')
+    }
   }
   try {
     const targets = CURRENCIES.filter((code) => code !== 'USD')
