@@ -11,6 +11,7 @@ import { listCategories } from '../services/categoryService'
 import { listGoals } from '../services/goalService'
 import { downloadCsv, parseCsv, stableCsvOperationId, transactionFingerprint, transactionsToCsv } from '../services/csvBackupService'
 import { Button, Card, EmptyState, Field, InlineError, LoadingState, Modal, PageHeading, SelectField } from '../components/ui'
+import { toast } from 'sonner'
 
 const blank = (accountId = '', kind = 'expense', categoryId = '') => ({ kind, amount: '', occurredOn: localDateString(), categoryId, goalId: '', note: '', accountId, destinationAccountId: '' })
 
@@ -35,6 +36,8 @@ export default function TransactionsPage() {
   const [page, setPage] = useState(0)
   const [form, setForm] = useState(null)
   const [fundingPrompt, setFundingPrompt] = useState(null)
+  const [deleteTarget, setDeleteTarget] = useState(null)
+  const [deleteBusy, setDeleteBusy] = useState(false)
   const [confirming, setConfirming] = useState(false)
   const [importPreview, setImportPreview] = useState(null)
   const [importing, setImporting] = useState(false)
@@ -202,9 +205,21 @@ export default function TransactionsPage() {
   }
 
   async function remove(row) {
-    if (!window.confirm('Delete this transaction? This cannot be undone.')) return
-    try { if (row.accountId) await voidFinancialEvent(user.uid, row.id); else await deleteTransaction(user.uid, row.id, profile.currencyCode); await refresh() }
-    catch { setError('Could not delete this transaction. Try again.') }
+    setDeleteTarget(row)
+  }
+
+  async function confirmDelete() {
+    if (!deleteTarget || deleteBusy) return
+    setDeleteBusy(true)
+    try {
+      if (deleteTarget.accountId) await voidFinancialEvent(user.uid, deleteTarget.id)
+      else await deleteTransaction(user.uid, deleteTarget.id, profile.currencyCode)
+      setDeleteTarget(null)
+      toast.success('Transaction deleted.')
+      await refresh()
+    } catch (caught) {
+      toast.error('Could not delete this transaction.', { description: caught.message || 'Try again.' })
+    } finally { setDeleteBusy(false) }
   }
 
   const categoriesForKind = categories.filter((item) => item.kind === (form?.kind?.startsWith('savings_') ? 'saving' : form?.kind))
@@ -246,6 +261,7 @@ export default function TransactionsPage() {
       </form>
     </Modal>}
     {confirming && form && <Modal title="Confirm transaction" description={`Review this ${form.kind} for ${form.amount} ${profile.currencyCode}, dated ${formatDateForDisplay(form.occurredOn)}. Saving will update the selected account.`} onClose={() => setConfirming(false)}><div className="flex justify-end gap-2"><Button variant="secondary" onClick={() => setConfirming(false)}>Go back</Button><Button onClick={saveForm}>Confirm and save</Button></div></Modal>}
+    {deleteTarget && <Modal title="Delete this transaction?" description="This cannot be undone. The transaction will be removed from your history and its account posting will be reversed." onClose={() => !deleteBusy && setDeleteTarget(null)}><div className="flex justify-end gap-2"><Button variant="secondary" disabled={deleteBusy} onClick={() => setDeleteTarget(null)}>Keep transaction</Button><Button variant="danger" disabled={deleteBusy} onClick={confirmDelete}>{deleteBusy ? 'Deleting…' : 'Delete transaction'}</Button></div></Modal>}
     {importPreview && <Modal wide title="Review CSV import" description="Review rows before they post. Imported rows update the selected accounts; importing history already reflected in an opening balance can double-count it." onClose={() => !importing && setImportPreview(null)}><div className="space-y-4"><p className="text-sm text-[#66756a]">{importPreview.fileName} · {importPreview.entries.filter((item) => !item.reason).length} ready · {importPreview.entries.filter((item) => item.reason).length} skipped</p><div className="max-h-[45vh] overflow-auto rounded-xl border border-[#e8ebe5]"><table className="w-full min-w-[620px] text-left text-sm"><thead className="sticky top-0 bg-[#f4f7f1] text-xs text-[#77847c]"><tr><th className="px-3 py-2">Row</th><th className="px-3 py-2">Date</th><th className="px-3 py-2">Type</th><th className="px-3 py-2">Amount</th><th className="px-3 py-2">Account</th><th className="px-3 py-2">Review</th></tr></thead><tbody className="divide-y divide-[#edf0eb]">{importPreview.entries.map((item) => <tr key={item.sourceRow}><td className="px-3 py-2">{item.sourceRow}</td><td className="px-3 py-2">{item.occurredOn}</td><td className="px-3 py-2 capitalize">{item.kind}</td><td className="px-3 py-2">{item.amountMinor ? formatMoney(item.amountMinor, profile.currencyCode) : '—'}</td><td className="px-3 py-2">{accounts.find((account) => account.id === item.accountId)?.name || '—'}</td><td className={`px-3 py-2 text-xs ${item.reason ? 'text-rose-700' : 'text-[#4e7650]'}`}>{item.reason || 'Ready'}</td></tr>)}</tbody></table></div><div className="flex flex-wrap justify-end gap-2"><Button variant="secondary" disabled={importing} onClick={() => setImportPreview(null)}>Cancel</Button><Button disabled={importing || !importPreview.entries.some((item) => !item.reason)} onClick={importCsvRows}>{importing ? 'Importing…' : `Import ${importPreview.entries.filter((item) => !item.reason).length} rows`}</Button></div></div></Modal>}
     {fundingPrompt && <Modal title="Use savings to cover this expense?" description={`This expense needs ${formatMoney(fundingPrompt.shortfallMinor, profile.currencyCode)} transferred into your spending account. The transfer and expense will post together.`} onClose={() => setFundingPrompt(null)}><div className="space-y-4"><SelectField label="Savings account" value={fundingPrompt.accountId || ''} onChange={(event) => setFundingPrompt({ ...fundingPrompt, accountId: event.target.value })}><option value="">Choose savings account</option>{fundingPrompt.accounts.map((account) => <option key={account.id} value={account.id}>{account.name} · {formatMoney(BigInt(account.balanceMinor), profile.currencyCode)}</option>)}</SelectField><div className="flex justify-end gap-2"><Button variant="secondary" onClick={() => setFundingPrompt(null)}>Cancel</Button><Button onClick={confirmSavingsTransfer} disabled={!fundingPrompt.accountId}>Transfer and save expense</Button></div></div></Modal>}
   </>

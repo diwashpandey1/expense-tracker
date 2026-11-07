@@ -1,0 +1,23 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  // Set `name` to the exact name of the existing Cloudflare Worker before deploying.
+  "name": "replace-with-existing-worker-name",
+  "main": "worker/index.js",
+  "compatibility_date": "2026-11-07",
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  "kv_namespaces": [
+    {
+      "binding": "CURRENCY_RATES",
+      // Create a KV namespace, then replace this value with its ID.
+      "id": "replace-with-currency-rates-kv-namespace-id"
+    }
+  ],
+  "triggers": {
+    "crons": ["*/15 * * * *"]
+  }
+}

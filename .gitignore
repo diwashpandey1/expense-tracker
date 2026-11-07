@@ -26,6 +26,8 @@ ui-debug.log
 .env
 .env.*
 !.env.example
+.dev.vars*
+.wrangler/
 *service-account*.json
 *firebase-adminsdk*.json
 

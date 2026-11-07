@@ -1,7 +1,8 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { useAuth } from './AuthContext'
 import { DEFAULT_PREFERENCES, normalizePreferences, readPreferences, savePreferences } from '../services/preferencesService'
-import { currencyRateIsDue, readCurrencyRates, syncCurrencyRates } from '../services/currencyRateService'
+import { readCurrencyRates } from '../services/currencyRateService'
+import { toast } from 'sonner'
 import { listAccounts } from '../services/ledgerService'
 
 const PreferencesContext = createContext(null)
@@ -64,21 +65,22 @@ export function PreferencesProvider({ children }) {
       if (!userId) { setCurrencyRateInfo(null); setCurrencyRateError(''); setCurrencyRateLoading(false) }
       return undefined
     }
-    setCurrencyRateInfo((current) => current?.baseCurrency === baseCurrency ? current : null)
+    setCurrencyRateInfo((current) => current?.baseCurrency === 'USD' ? current : null)
     setCurrencyRateLoading(true)
     setCurrencyRateError('')
-    syncCurrencyRates(userId, baseCurrency)
-      .then((info) => { if (active) setCurrencyRateInfo(info) })
-      .catch(async (caught) => {
+    readCurrencyRates()
+      .then((info) => {
+        if (!active) return
+        setCurrencyRateInfo(info)
+        if (info.refreshError) {
+          setCurrencyRateError(info.refreshError)
+          toast.error('Using the last saved exchange rates.', { id: 'currency-rates-stale', description: info.refreshError })
+        }
+      })
+      .catch((caught) => {
         if (!active) return
         setCurrencyRateError(caught.message || 'Could not update exchange rates.')
-        try {
-          const cached = await readCurrencyRates(userId, baseCurrency)
-          if (active && cached?.rates) {
-            const syncedAt = cached.syncedAt?.toMillis?.() || 0
-            setCurrencyRateInfo({ baseCurrency, rates: cached.rates, rateDate: cached.rateDate || '', syncedAt, nextSyncAt: syncedAt + 7 * 24 * 60 * 60 * 1000, stale: currencyRateIsDue({ nextSyncAt: syncedAt + 7 * 24 * 60 * 60 * 1000 }) })
-          }
-        } catch { /* The selected display currency remains saved; source amounts stay available. */ }
+        toast.error('Exchange rates are unavailable.', { id: 'currency-rates-unavailable', description: caught.message })
       })
       .finally(() => { if (active) setCurrencyRateLoading(false) })
     return () => { active = false }
@@ -96,11 +98,12 @@ export function PreferencesProvider({ children }) {
     root.dataset.hideDashboardAmounts = preferences.dashboard.hideAmounts ? 'true' : 'false'
     root.dataset.dateFormat = preferences.transactions.dateFormat
     const requestedCurrency = preferences.currency.displayCurrency || baseCurrency
-    const rate = baseCurrency === requestedCurrency ? 1 : currencyRateInfo?.baseCurrency === baseCurrency ? Number(currencyRateInfo?.rates?.[requestedCurrency]) : NaN
-    const conversionAvailable = Number.isFinite(rate) && rate > 0
+    const conversionAvailable = currencyRateInfo?.baseCurrency === 'USD'
+      && Number.isFinite(Number(currencyRateInfo?.rates?.[requestedCurrency]))
+      && Number(currencyRateInfo.rates[requestedCurrency]) > 0
     root.dataset.sourceCurrency = baseCurrency
     root.dataset.displayCurrency = conversionAvailable ? requestedCurrency : baseCurrency
-    root.dataset.exchangeRate = conversionAvailable ? String(rate) : '1'
+    root.dataset.usdRates = conversionAvailable ? JSON.stringify(currencyRateInfo.rates) : '{}'
   }, [preferences, systemDark, baseCurrency, currencyRateInfo])
 
   const updatePreferences = useCallback(async (section, patch) => {
@@ -117,27 +120,13 @@ export function PreferencesProvider({ children }) {
     }
   }, [userId, baseCurrency])
 
-  const syncRatesNow = useCallback(async () => {
-    if (!userId) throw new Error('Sign in to sync exchange rates.')
-    setCurrencyRateLoading(true)
-    setCurrencyRateError('')
-    try {
-      const info = await syncCurrencyRates(userId, baseCurrency)
-      setCurrencyRateInfo(info)
-      return info
-    } catch (caught) {
-      setCurrencyRateError(caught.message || 'Could not update exchange rates.')
-      throw caught
-    } finally { setCurrencyRateLoading(false) }
-  }, [userId, baseCurrency])
-
   const resetPreferences = useCallback(() => {
     setPreferences(normalizePreferences({}, baseCurrency))
     setError('')
     setSavedAt(Date.now())
   }, [baseCurrency])
 
-  const value = useMemo(() => ({ preferences, loading, error, savedAt, updatePreferences, resetPreferences, currencyRateInfo, currencyRateLoading, currencyRateError, syncRatesNow, displayCurrency: document.documentElement.dataset.displayCurrency || baseCurrency }), [preferences, loading, error, savedAt, updatePreferences, resetPreferences, currencyRateInfo, currencyRateLoading, currencyRateError, syncRatesNow, baseCurrency])
+  const value = useMemo(() => ({ preferences, loading, error, savedAt, updatePreferences, resetPreferences, currencyRateInfo, currencyRateLoading, currencyRateError, displayCurrency: document.documentElement.dataset.displayCurrency || baseCurrency }), [preferences, loading, error, savedAt, updatePreferences, resetPreferences, currencyRateInfo, currencyRateLoading, currencyRateError, baseCurrency])
   return <PreferencesContext.Provider value={value}>{children}</PreferencesContext.Provider>
 }
 

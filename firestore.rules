@@ -365,31 +365,9 @@ service cloud.firestore {
       }
 
       match /currencyRates/{baseCurrency} {
-        allow read: if signedIn(uid);
-        allow create: if signedIn(uid)
-          && supportedCurrency(baseCurrency)
-          && request.resource.data.keys().hasOnly(['baseCurrency', 'rates', 'rateDate', 'syncedAt', 'updatedAt'])
-          && request.resource.data.keys().hasAll(['baseCurrency', 'rates', 'rateDate', 'syncedAt', 'updatedAt'])
-          && request.resource.data.baseCurrency == baseCurrency
-          && request.resource.data.rates is map
-          && request.resource.data.rates.keys().hasOnly(['USD', 'EUR', 'GBP', 'INR', 'NPR', 'AUD', 'CAD', 'JPY', 'CNY', 'SGD', 'CHF', 'NZD'])
-          && request.resource.data.rates.keys().hasAll(['USD', 'EUR', 'GBP', 'INR', 'NPR', 'AUD', 'CAD', 'JPY', 'CNY', 'SGD', 'CHF', 'NZD'])
-          && request.resource.data.rateDate is string
-          && request.resource.data.syncedAt == request.time
-          && request.resource.data.updatedAt == request.time;
-        allow update: if signedIn(uid)
-          && supportedCurrency(baseCurrency)
-          && request.resource.data.keys().hasOnly(['baseCurrency', 'rates', 'rateDate', 'syncedAt', 'updatedAt'])
-          && request.resource.data.keys().hasAll(['baseCurrency', 'rates', 'rateDate', 'syncedAt', 'updatedAt'])
-          && request.resource.data.baseCurrency == baseCurrency
-          && request.resource.data.rates is map
-          && request.resource.data.rates.keys().hasOnly(['USD', 'EUR', 'GBP', 'INR', 'NPR', 'AUD', 'CAD', 'JPY', 'CNY', 'SGD', 'CHF', 'NZD'])
-          && request.resource.data.rates.keys().hasAll(['USD', 'EUR', 'GBP', 'INR', 'NPR', 'AUD', 'CAD', 'JPY', 'CNY', 'SGD', 'CHF', 'NZD'])
-          && request.resource.data.rateDate is string
-          && request.resource.data.syncedAt == request.time
-          && request.resource.data.updatedAt == request.time
-          && request.time >= resource.data.syncedAt + duration.value(7, 'd');
-        allow delete: if signedIn(uid);
+        // Legacy per-user caches are read/delete-only while the shared Worker cache is adopted.
+        allow read, delete: if signedIn(uid);
+        allow create, update: if false;
       }
 
       match /auditEvents/{auditId} {

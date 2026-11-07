@@ -1,4 +1,6 @@
 const MAX_MINOR = 999_999_999_999_999n
+let cachedRatePayload = ''
+let cachedUsdRates = {}
 
 export function currencyExponent(currencyCode) {
   try {
@@ -28,18 +30,24 @@ export function formatMoney(minorInput, currencyCode, locale = navigator.languag
   let raw = typeof minorInput === 'bigint' ? minorInput : BigInt(minorInput || '0')
   if (typeof document !== 'undefined') {
     const root = document.documentElement
-    const sourceCurrency = root.dataset.sourceCurrency
     const displayCurrency = root.dataset.displayCurrency
-    const rate = Number(root.dataset.exchangeRate)
-    if (sourceCurrency && displayCurrency && displayCurrency !== sourceCurrency && Number.isFinite(rate) && rate > 0) {
-      const sourceScale = 10 ** currencyExponent(sourceCurrency)
+    const ratePayload = root.dataset.usdRates || '{}'
+    if (ratePayload !== cachedRatePayload) {
+      try { cachedUsdRates = JSON.parse(ratePayload) } catch { cachedUsdRates = {} }
+      cachedRatePayload = ratePayload
+    }
+    const sourceRate = Number(cachedUsdRates[currencyCode])
+    const targetRate = Number(cachedUsdRates[displayCurrency])
+    const rate = targetRate / sourceRate
+    if (displayCurrency && displayCurrency !== currencyCode && Number.isFinite(rate) && rate > 0) {
+      const sourceScale = 10 ** currencyExponent(currencyCode)
       const targetScale = 10 ** currencyExponent(displayCurrency)
       const convertedMinor = Math.round(Number(raw) / sourceScale * rate * targetScale)
       if (Number.isSafeInteger(convertedMinor)) {
         raw = BigInt(convertedMinor)
         currencyCode = displayCurrency
       }
-    } else if (sourceCurrency && displayCurrency === sourceCurrency) currencyCode = sourceCurrency
+    }
   }
   const negative = raw < 0n
   const absolute = negative ? -raw : raw
