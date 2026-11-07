@@ -391,7 +391,7 @@ One-time Cloudflare setup:
    npx wrangler kv namespace create CURRENCY_RATES
    ```
 
-2. Copy its namespace ID into `wrangler.jsonc` under the `CURRENCY_RATES` binding. Replace the placeholder Worker `name` with the exact name already deployed in your Cloudflare account.
+2. Copy its namespace ID into `wrangler.jsonc` under the `CURRENCY_RATES` binding. The configured Worker name is `expense-tracker`; keep it matched to the Worker configured in Cloudflare Builds.
 3. Add the provider key as a Worker secret:
 
    ```sh
