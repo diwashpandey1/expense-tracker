@@ -3,6 +3,7 @@ const RETRY_KEY = 'rates:USD:retry:v1'
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000
 const HOUR_MS = 60 * 60 * 1000
 const CURRENCIES = ['USD', 'EUR', 'GBP', 'INR', 'NPR', 'AUD', 'CAD', 'JPY', 'CNY', 'SGD', 'CHF', 'NZD']
+let refreshInFlight = null
 
 function jsonResponse(body, status = 200, extraHeaders = {}) {
   return new Response(status === 204 ? null : JSON.stringify(body), {
@@ -35,13 +36,16 @@ async function getSnapshot(env) {
   }
 }
 
-async function refreshIfExpired(env) {
+async function refreshExpiredSnapshot(env) {
   const saved = await getSnapshot(env)
   if (saved && Date.now() < Number(saved.expiresAt)) return saved
+  if (!env.CURRENCY_API_KEY) throw new Error('The CurrencyAPI secret is not configured on this Worker.')
   const retry = await env.CURRENCY_RATES.get(RETRY_KEY, 'json')
-  if (Number(retry?.retryAfter) > Date.now()) return saved
+  if (Number(retry?.retryAfter) > Date.now()) {
+    if (saved) return saved
+    throw new Error(retry?.lastError || 'Rate synchronization is in its retry window.')
+  }
   try {
-    if (!env.CURRENCY_API_KEY) throw new Error('The CurrencyAPI secret is not configured on this Worker.')
     const targets = CURRENCIES.filter((code) => code !== 'USD')
     const url = new URL('https://api.currencyapi.com/v3/latest')
     url.searchParams.set('base_currency', 'USD')
@@ -71,9 +75,30 @@ async function refreshIfExpired(env) {
   } catch (error) {
     const attempts = Math.min((Number(retry?.attempts) || 0) + 1, 10)
     const retryDelay = Math.min(HOUR_MS * (2 ** (attempts - 1)), 24 * HOUR_MS)
-    await env.CURRENCY_RATES.put(RETRY_KEY, JSON.stringify({ attempts, retryAfter: Date.now() + retryDelay }))
+    await env.CURRENCY_RATES.put(RETRY_KEY, JSON.stringify({
+      attempts,
+      retryAfter: Date.now() + retryDelay,
+      lastError: error instanceof Error ? error.message : 'Currency provider request failed.',
+    }))
     throw error
   }
+}
+
+function refreshIfExpired(env) {
+  // Coalesce simultaneous first-load/expiry requests in the same Worker isolate.
+  if (!refreshInFlight) {
+    refreshInFlight = refreshExpiredSnapshot(env).finally(() => { refreshInFlight = null })
+  }
+  return refreshInFlight
+}
+
+function publicSyncError(error) {
+  const message = error instanceof Error ? error.message : ''
+  if (message.includes('CurrencyAPI secret is not configured')) return 'Currency-rate sync is not configured. Add the CURRENCY_API_KEY Worker secret.'
+  const status = message.match(/CurrencyAPI request failed \((\d{3})\)/)?.[1]
+  if (status) return `The currency provider returned HTTP ${status}. Check the API key, plan, and quota.`
+  if (message.includes('KV') || message.includes('CURRENCY_RATES')) return 'The currency-rate KV binding is unavailable. Check the CURRENCY_RATES Worker binding.'
+  return 'Currency-rate sync failed. Check the Worker logs and currency provider configuration.'
 }
 
 export default {
@@ -83,15 +108,38 @@ export default {
       if (request.method === 'OPTIONS') return jsonResponse({}, 204)
       if (request.method !== 'GET') return jsonResponse({ error: 'Method not allowed.' }, 405, { Allow: 'GET, OPTIONS' })
       try {
-        const snapshot = await getSnapshot(env)
-        if (!snapshot) return jsonResponse({ error: 'The shared exchange-rate snapshot is not ready yet.' }, 503)
+        const snapshot = await refreshIfExpired(env)
+        if (!snapshot) return jsonResponse({ error: 'The shared exchange-rate snapshot could not be initialized.' }, 503)
         return jsonResponse({ ...snapshot, stale: Date.now() >= Number(snapshot.expiresAt) })
-      } catch {
-        return jsonResponse({ error: 'The shared exchange-rate service is temporarily unavailable.' }, 503)
+      } catch (error) {
+        try {
+          const staleSnapshot = await getSnapshot(env)
+          if (staleSnapshot) {
+            return jsonResponse({
+              ...staleSnapshot,
+              stale: true,
+              refreshError: publicSyncError(error),
+            })
+          }
+        } catch {
+          // Fall through to the actionable setup error below.
+        }
+        return jsonResponse({ error: publicSyncError(error) }, 503)
       }
     }
 
-    return env.ASSETS.fetch(request)
+    const response = await env.ASSETS.fetch(request)
+    if (!response.headers.get('Content-Type')?.includes('text/html')) return response
+
+    // firebase.json applies only on Firebase Hosting; set the popup-compatible
+    // policy here as this app is served from Cloudflare Workers.
+    const headers = new Headers(response.headers)
+    headers.set('Cross-Origin-Opener-Policy', 'same-origin-allow-popups')
+    return new Response(response.body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers,
+    })
   },
 
   async scheduled(controller, env, ctx) {
