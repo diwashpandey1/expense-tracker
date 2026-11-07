@@ -1,6 +1,6 @@
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
-import { ArrowDownLeft, BarChart3, ChevronDown, Command, LayoutDashboard, LogOut, Menu, Tags, Target, WalletCards, Landmark, CalendarClock } from 'lucide-react'
+import { ArrowDownLeft, BarChart3, Calculator, ChevronDown, Command, LayoutDashboard, LogOut, Menu, Tags, Target, WalletCards, Landmark, CalendarClock } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { usePreferences } from '../context/PreferencesContext'
@@ -16,6 +16,7 @@ const links = [
   { to: '/app/categories', label: 'Categories', icon: Tags },
   { to: '/app/goals', label: 'Savings goals', icon: Target },
   { to: '/app/analytics', label: 'Analytics', icon: BarChart3 },
+  { to: '/app/tools', label: 'Financial tools', icon: Calculator },
 ]
 
 function InitialAvatar({ name }) {

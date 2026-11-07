@@ -78,6 +78,7 @@ export default function App() {
         <Route path="analytics" element={<AnalyticsPage />} />
         <Route path="accounts" element={<AccountsPage />} />
         <Route path="recurring" element={<RecurringPage />} />
+        <Route path="tools/*" element={<ToolsPage basePath="/app/tools" embedded />} />
         <Route path="settings" element={<SettingsPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/app" replace />} />

@@ -51,16 +51,16 @@ async function refreshExpiredSnapshot(env) {
     }
   }
   try {
-    const targets = CURRENCIES.filter((code) => code !== 'USD')
-    const url = new URL('https://api.currencyapi.com/v3/latest')
-    url.searchParams.set('base_currency', 'USD')
-    url.searchParams.set('currencies', targets.join(','))
-    const response = await fetch(url, { headers: { apikey: env.CURRENCY_API_KEY } })
+    const url = new URL('https://api.currencyapi.com/v3/latest?apikey=')
+    url.searchParams.set('apikey', env.CURRENCY_API_KEY)
+    url.searchParams.set('currencies', CURRENCIES.join(','))
+    const response = await fetch(url)
     const result = await response.json().catch(() => ({}))
     if (!response.ok) throw new Error(`CurrencyAPI request failed (${response.status}).`)
 
     const rates = { USD: 1 }
-    for (const code of targets) {
+    for (const code of CURRENCIES) {
+      if (code === 'USD') continue
       const value = Number(result.data?.[code]?.value ?? result.data?.[code])
       if (!Number.isFinite(value) || value <= 0) throw new Error(`CurrencyAPI returned no valid USD rate for ${code}.`)
       rates[code] = value
