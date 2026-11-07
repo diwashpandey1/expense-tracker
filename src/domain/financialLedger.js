@@ -10,7 +10,7 @@ export function toMinorBigInt(value, label = 'Amount') {
 export function accountBalanceMinor(account, ledgerEvents) {
   let balance = toMinorBigInt(account.openingBalanceMinor || '0', 'Opening balance')
   for (const event of ledgerEvents) {
-    if (event.voided) continue
+    if (event.voided || event.kind === 'opening_balance') continue
     for (const posting of event.postings || []) {
       if (posting.accountId === account.id) balance += BigInt(posting.deltaMinor)
     }

@@ -96,26 +96,66 @@ service cloud.firestore {
     match /users/{uid} {
       allow read: if signedIn(uid);
       allow create: if signedIn(uid)
-        && request.resource.data.keys().hasOnly(['uid', 'email', 'displayName', 'currencyCode', 'createdAt', 'updatedAt'])
+        && request.resource.data.keys().hasOnly(['uid', 'email', 'displayName', 'currencyCode', 'onboardingStatus', 'createdAt', 'updatedAt'])
         && request.resource.data.keys().hasAll(['uid', 'email', 'displayName', 'currencyCode', 'createdAt', 'updatedAt'])
         && request.resource.data.uid == uid
         && request.resource.data.email == request.auth.token.email
         && request.resource.data.displayName is string
         && request.resource.data.displayName.size() <= 100
         && request.resource.data.currencyCode is string
-        && request.resource.data.currencyCode.matches('^[A-Z]{3}$')
+        && supportedCurrency(request.resource.data.currencyCode)
+        && (!('onboardingStatus' in request.resource.data.keys()) || request.resource.data.onboardingStatus == 'not_started')
         && request.resource.data.createdAt == request.time
         && request.resource.data.updatedAt == request.time;
       allow update: if signedIn(uid)
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName', 'currencyCode', 'updatedAt'])
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName', 'currencyCode', 'fullName', 'countryCode', 'timeZone', 'dateOfBirth', 'gender', 'onboardingStatus', 'onboardingCompletedAt', 'primaryAccountId', 'updatedAt'])
         && request.resource.data.uid == resource.data.uid
         && request.resource.data.email == resource.data.email
         && request.resource.data.currencyCode is string
-        && request.resource.data.currencyCode.matches('^[A-Z]{3}$')
+        && supportedCurrency(request.resource.data.currencyCode)
         && request.resource.data.displayName is string
         && request.resource.data.displayName.size() <= 100
+        && (!('fullName' in request.resource.data.keys()) || (request.resource.data.fullName is string && request.resource.data.fullName.size() <= 100))
+        && (!('countryCode' in request.resource.data.keys()) || request.resource.data.countryCode is string)
+        && (!('timeZone' in request.resource.data.keys()) || request.resource.data.timeZone is string)
+        && (!('dateOfBirth' in request.resource.data.keys()) || request.resource.data.dateOfBirth is string)
+        && (!('gender' in request.resource.data.keys()) || request.resource.data.gender is string)
+        && (!('onboardingStatus' in request.resource.data.keys()) || request.resource.data.onboardingStatus in ['not_started', 'in_progress', 'completed'])
+        && (!(resource.data.get('onboardingStatus', '') == 'completed' && request.resource.data.get('onboardingStatus', '') != 'completed'))
+        && (!(request.resource.data.get('onboardingStatus', '') == 'completed' && resource.data.get('onboardingStatus', '') != 'completed')
+          || (request.resource.data.primaryAccountId is string
+            && existsAfter(/databases/$(database)/documents/users/$(uid)/accounts/$(request.resource.data.primaryAccountId))
+            && getAfter(/databases/$(database)/documents/users/$(uid)/accounts/$(request.resource.data.primaryAccountId)).data.status == 'active'))
         && request.resource.data.updatedAt == request.time;
       allow delete: if signedIn(uid);
+
+      match /onboarding/{stateId} {
+        allow read: if signedIn(uid);
+        allow create, update: if signedIn(uid)
+          && stateId == 'state'
+          && request.resource.data.keys().hasOnly(['currentStep', 'answers', 'updatedAt'])
+          && request.resource.data.currentStep is int
+          && request.resource.data.currentStep >= 0 && request.resource.data.currentStep <= 6
+          && request.resource.data.answers is map
+          && request.resource.data.updatedAt == request.time;
+        allow delete: if signedIn(uid);
+      }
+
+      match /financialProfile/{profileId} {
+        allow read: if signedIn(uid);
+        allow create, update: if signedIn(uid)
+          && profileId == 'general'
+          && request.resource.data.keys().hasOnly(['occupation', 'occupationOther', 'incomeSources', 'incomeFrequency', 'incomeEstimate', 'incomeChannels', 'financialHabits', 'household', 'financialGoals', 'createdAt', 'updatedAt'])
+          && request.resource.data.occupation is string
+          && request.resource.data.incomeSources is list
+          && request.resource.data.incomeEstimate is map
+          && request.resource.data.incomeChannels is list
+          && request.resource.data.financialHabits is map
+          && request.resource.data.household is map
+          && request.resource.data.financialGoals is map
+          && request.resource.data.updatedAt == request.time;
+        allow delete: if signedIn(uid);
+      }
 
       match /settings/{settingId} {
         allow read: if signedIn(uid);
@@ -148,7 +188,7 @@ service cloud.firestore {
           && request.resource.data.currency is map
           && request.resource.data.currency.keys().hasOnly(['displayCurrency'])
           && request.resource.data.currency.displayCurrency is string
-          && supportedCurrency(request.resource.data.currency.displayCurrency)
+          && (request.resource.data.currency.displayCurrency == '' || supportedCurrency(request.resource.data.currency.displayCurrency))
           && request.resource.data.transactions is map
           && request.resource.data.transactions.defaultType in ['income', 'expense', 'transfer']
           && request.resource.data.transactions.defaultAccountId is string
@@ -296,20 +336,29 @@ service cloud.firestore {
       match /accounts/{accountId} {
         allow read: if signedIn(uid);
         allow create: if signedIn(uid)
-          && request.resource.data.keys().hasOnly(['name', 'accountType', 'classification', 'currencyCode', 'openingBalanceMinor', 'balanceMinor', 'status', 'createdAt', 'updatedAt'])
+          && request.resource.data.keys().hasOnly(['name', 'accountType', 'classification', 'currencyCode', 'openingBalanceMinor', 'balanceMinor', 'status', 'provider', 'description', 'purpose', 'subtype', 'openingBalanceDate', 'createdAt', 'updatedAt'])
           && request.resource.data.name is string && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 80
           && request.resource.data.accountType in ['cash', 'bank', 'ewallet', 'other']
           && request.resource.data.classification in ['spending', 'savings']
-          && request.resource.data.currencyCode.matches('^[A-Z]{3}$')
+          && supportedCurrency(request.resource.data.currencyCode)
+          && (!('provider' in request.resource.data.keys()) || (request.resource.data.provider is string && request.resource.data.provider.size() <= 80))
+          && (!('description' in request.resource.data.keys()) || (request.resource.data.description is string && request.resource.data.description.size() <= 240))
+          && (!('purpose' in request.resource.data.keys()) || (request.resource.data.purpose is string && request.resource.data.purpose.size() <= 50))
+          && (!('subtype' in request.resource.data.keys()) || (request.resource.data.subtype is string && request.resource.data.subtype.size() <= 50))
+          && (!('openingBalanceDate' in request.resource.data.keys()) || validDate(request.resource.data.openingBalanceDate))
           && (request.resource.data.openingBalanceMinor == '0' || validAmount(request.resource.data.openingBalanceMinor))
           && request.resource.data.balanceMinor is int && request.resource.data.balanceMinor >= 0
           && request.resource.data.status == 'active'
           && request.resource.data.createdAt == request.time && request.resource.data.updatedAt == request.time;
         allow update: if signedIn(uid)
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'accountType', 'classification', 'status', 'balanceMinor', 'lastOperationId', 'updatedAt'])
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'accountType', 'classification', 'status', 'balanceMinor', 'lastOperationId', 'provider', 'description', 'purpose', 'subtype', 'updatedAt'])
           && request.resource.data.name is string && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 80
           && request.resource.data.accountType in ['cash', 'bank', 'ewallet', 'other']
           && request.resource.data.classification in ['spending', 'savings']
+          && (!('provider' in request.resource.data.keys()) || (request.resource.data.provider is string && request.resource.data.provider.size() <= 80))
+          && (!('description' in request.resource.data.keys()) || (request.resource.data.description is string && request.resource.data.description.size() <= 240))
+          && (!('purpose' in request.resource.data.keys()) || (request.resource.data.purpose is string && request.resource.data.purpose.size() <= 50))
+          && (!('subtype' in request.resource.data.keys()) || (request.resource.data.subtype is string && request.resource.data.subtype.size() <= 50))
           && request.resource.data.status in ['active', 'archived']
           && request.resource.data.balanceMinor is int && request.resource.data.balanceMinor >= 0
           && request.resource.data.updatedAt == request.time
@@ -344,8 +393,8 @@ service cloud.firestore {
       match /ledgerEntries/{entryId} {
         allow read: if signedIn(uid);
         allow create: if signedIn(uid)
-          && request.resource.data.kind in ['income', 'expense', 'transfer', 'adjustment']
-          && validAmount(request.resource.data.amountMinor)
+          && request.resource.data.kind in ['income', 'expense', 'transfer', 'adjustment', 'opening_balance', 'external_transfer_in', 'external_transfer_out']
+          && (request.resource.data.kind == 'opening_balance' ? validMinorTotal(request.resource.data.amountMinor) : validAmount(request.resource.data.amountMinor))
           && validDate(request.resource.data.occurredOn)
           && request.resource.data.postings is list
           && (!('currencyCode' in request.resource.data.keys()) || validAccountCurrency(uid, request.resource.data.accountId, request.resource.data.currencyCode))
@@ -429,7 +478,7 @@ service cloud.firestore {
       match /transactions/{transactionId} {
         allow create: if signedIn(uid)
           && request.resource.data.keys().hasOnly(['kind', 'operationKind', 'amountMinor', 'accountId', 'destinationAccountId', 'savingsAccountId', 'allocationAdjustments', 'lastOperationId', 'occurredOn', 'categoryId', 'categoryName', 'categorySplits', 'goalId', 'goalName', 'note', 'postings', 'currencyCode', 'createdAt', 'updatedAt'])
-          && request.resource.data.kind in ['income', 'expense', 'transfer']
+          && request.resource.data.kind in ['income', 'expense', 'transfer', 'external_transfer_in', 'external_transfer_out']
           && validAmount(request.resource.data.amountMinor)
           && validDate(request.resource.data.occurredOn)
           && request.resource.data.note is string && request.resource.data.note.size() <= 500
@@ -441,9 +490,12 @@ service cloud.firestore {
           && validEventPosting(uid, transactionId, request.resource.data.accountId)
           && (request.resource.data.kind != 'transfer' || validEventPosting(uid, transactionId, request.resource.data.destinationAccountId))
           && (request.resource.data.savingsAccountId == null || validEventPosting(uid, transactionId, request.resource.data.savingsAccountId))
-          && (request.resource.data.kind == 'transfer'
-            ? validAccount(uid, request.resource.data.destinationAccountId)
-            : validCategory(uid, request.resource.data.categoryId, request.resource.data.kind, request.resource.data.categoryName))
+          && ((request.resource.data.kind == 'transfer'
+            && validAccount(uid, request.resource.data.destinationAccountId))
+            || (request.resource.data.kind in ['income', 'expense']
+              && validCategory(uid, request.resource.data.categoryId, request.resource.data.kind, request.resource.data.categoryName))
+            || (request.resource.data.kind in ['external_transfer_in', 'external_transfer_out']
+              && request.resource.data.categoryId == null && request.resource.data.categoryName == null))
           && (!('categorySplits' in request.resource.data.keys()) || request.resource.data.categorySplits == null || (request.resource.data.kind == 'expense' && validCategorySplits(uid, request.resource.data.categorySplits) && request.resource.data.categorySplits[0].categoryId == request.resource.data.categoryId && request.resource.data.categorySplits[0].categoryName == request.resource.data.categoryName))
           && request.resource.data.createdAt == request.time
           && request.resource.data.updatedAt == request.time;

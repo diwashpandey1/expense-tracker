@@ -23,11 +23,11 @@ function profilePayload(user, displayName, currencyCode) {
     email: user.email ?? '',
     displayName: displayName || user.displayName || user.email?.split('@')[0] || 'User',
     currencyCode,
+    onboardingStatus: 'not_started',
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   }
 }
-
 export async function createAccount({ email, password, displayName, currencyCode }) {
   const credential = await createUserWithEmailAndPassword(requireAuth(), email.trim(), password)
   await updateAuthProfile(credential.user, { displayName: displayName.trim() })

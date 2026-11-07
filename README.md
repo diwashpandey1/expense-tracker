@@ -2,11 +2,12 @@
 
 AVORA is a responsive personal finance tracker built with React, JavaScript, Vite, Firebase Authentication, and Cloud Firestore. It supports account-backed income and spending, savings accounts and goals, budgets, recurring entries, reporting, CSV backups, and display-currency conversion.
 
-This repository is the application source and its single maintained project guide. **Project setup, architecture, data model, financial behavior, security, testing, deployment, migration boundaries, and known limitations are documented here.** Source files remain JavaScript (`.js`) or React JSX (`.jsx`); TypeScript is not used.
+This repository is the application source and project guide. Source files remain JavaScript (`.js`) or React JSX (`.jsx`); TypeScript is not used. The financial onboarding and account system are implemented in the app and described in the companion architecture, schema, and integrity documents linked below.
 
 ## Contents
 
 - [What the app does](#what-the-app-does)
+- [Onboarding and accounts](#onboarding-and-accounts)
 - [Routes](#routes)
 - [Financial behavior and data integrity](#financial-behavior-and-data-integrity)
 - [Currency and conversion](#currency-and-conversion)
@@ -24,6 +25,7 @@ This repository is the application source and its single maintained project guid
 - [Data reset, account deletion, and migration](#data-reset-account-deletion-and-migration)
 - [Known limitations](#known-limitations)
 - [Troubleshooting](#troubleshooting)
+- [Companion documentation](#companion-documentation)
 
 ## What the app does
 
@@ -39,12 +41,13 @@ This repository is the application source and its single maintained project guid
 - Firebase email/password sign-up and sign-in.
 - Google sign-in through Firebase Authentication.
 - Password reset, persistent browser sign-in, profile setup, and sign-out.
+- New-user onboarding before entering the finance workspace; existing profiles without onboarding metadata remain on the legacy-complete path.
 - Initials or a generic icon identify the user. Profile images, avatar uploads, image endpoints, and Firebase Storage are intentionally excluded.
 
 ### Finance workspace
 
 - Multiple spending and savings accounts, optional opening balances, account history, and auditable balance adjustments.
-- Income, expenses, and internal transfers with date, category, optional note, and edit/void history.
+- Income, expenses, internal transfers, and external incoming/outgoing transfers with date, category where applicable, optional note, and edit/void history.
 - Expense splits across two or three categories. Split amounts must equal the transaction total, and summaries and category budgets use the individual split amounts.
 - The original 18 expense, 8 income, and 9 savings category labels, plus custom categories. Used categories are archived so historical entries retain their category context.
 - Monthly or yearly budgets, category budgets, progress bars/rings, and threshold/over-limit warnings.
@@ -65,7 +68,7 @@ This repository is the application source and its single maintained project guid
 | `/tools/sip-calculator` | SIP calculator | Signed out |
 | `/tools/currency-exchange` | Standalone currency calculator | Signed out |
 | `/login`, `/signup`, `/reset-password` | Authentication | Signed out |
-| `/app` | Dashboard overview | Signed in |
+| `/app` | Onboarding gate for new users; dashboard after setup | Signed in |
 | `/app/transactions` | Transaction history and entry | Signed in |
 | `/app/accounts` | Spending/savings accounts and history | Signed in |
 | `/app/recurring` | Recurring schedules and due items | Signed in |
@@ -76,6 +79,16 @@ This repository is the application source and its single maintained project guid
 | `/app/settings` | Profile, appearance, dashboard, privacy, and app settings | Signed in |
 
 Signed-in users are redirected from public and authentication routes to `/app`. Unsigned users are redirected from `/app/*` to `/login`. These route guards improve navigation; Firestore Security Rules separately enforce data access.
+
+New profiles with `onboardingStatus` `not_started` or `in_progress` see the compulsory onboarding wizard in place of the finance workspace until setup is saved. Existing profiles with no onboarding status are treated as legacy-complete.
+
+## Onboarding and accounts
+
+New users complete seven steps: personal profile and currency, occupation/income, prior financial habits, optional household information, financial objectives, account setup, and an explicit starting-position review. Answers save to Firestore after each navigation and resume after sign-in or refresh. Household/profile information is optional; choosing an occupation option is required, and users can choose no regular income.
+
+At least one account is required before entering `/app`. Users may choose bank, physical cash, digital wallet, or savings-type accounts, including multiple accounts and zero starting balances. A user without a bank can start with a physical cash wallet. The opening amount means money already present when tracking starts; it is recorded in account history but is never counted as income. Onboarding does not create actual income events or savings goals from survey answers.
+
+All tracked accounts currently use the user's primary currency. Mixed-currency balances and transfers are not enabled. Internal transfers require a different active destination account, sufficient source funds, and matching currencies; the confirmation names both sides. External incoming and outgoing transfers change a tracked account balance but are excluded from income and expense reporting. Account history and cached balances are maintained with Firestore transactions.
 
 ## Financial behavior and data integrity
 
@@ -306,12 +319,14 @@ Every finance path is scoped below `users/{uid}`. The signed-in Firebase Auth UI
 
 | Path | Purpose |
 | --- | --- |
-| `users/{uid}` | Email, display name, source/account currency, timestamps |
+| `users/{uid}` | Email, display name, primary currency, personal profile, onboarding status |
+| `users/{uid}/onboarding/state` | Saved wizard step and answers; deleted on successful completion |
+| `users/{uid}/financialProfile/general` | Private occupation, income profile, historical estimates, household details, and objectives |
 | `users/{uid}/settings/preferences` | Appearance, dashboard, entry defaults, reminders, privacy, display currency |
 | `users/{uid}/categories/{categoryId}` | Expense, income, and savings categories; archive/default flags |
-| `users/{uid}/accounts/{accountId}` | Account type/classification, source currency, opening/current balance, status |
+| `users/{uid}/accounts/{accountId}` | Account metadata, primary source currency, opening/current balance, start date, status |
 | `users/{uid}/transactions/{transactionId}` | Legacy transaction records and mirrors of account-backed entries for history UI |
-| `users/{uid}/ledgerEntries/{operationId}` | Account-backed income, expense, transfer, adjustment, and split details |
+| `users/{uid}/ledgerEntries/{operationId}` | Opening balance, income, expense, internal/external transfer, adjustment, and split details |
 | `users/{uid}/financialOperations/{operationId}` | Idempotency and signed account deltas used by rules validation |
 | `users/{uid}/financeState/summary` | Serialized savings balance and goal-allocation totals maintained with operations |
 | `users/{uid}/goalAllocations/{goalId}` | Savings reserved toward a goal; not a separate balance |
@@ -322,6 +337,8 @@ Every finance path is scoped below `users/{uid}`. The signed-in Firebase Auth UI
 | `users/{uid}/recurringOccurrences/{scheduleId_dueDate}` | Pending/processed occurrence with deterministic identity |
 
 Legacy `users/{uid}/currencyRates/{baseCurrency}` documents are not used by the new flow. Firestore allows their owner to read/delete them, but denies create/update. Account deletion still cleans up those old documents.
+
+Opening balances are history-only `opening_balance` events and are not copied into the income/expense `transactions` query collection. Ledger calculations seed from the account opening field and skip that informational event, so starting money is counted exactly once. Internal transfers use one event with two signed account postings; external transfers use one posting. All are excluded from income and expense summaries.
 
 Money uses integer minor units as decimal strings in ledger documents. `occurredOn` is a calendar-date string; Firestore timestamps are used for audit and create/update times. New account-backed transactions include their original `currencyCode`; the current display currency is a preference and is not stored as the transaction's denomination.
 
@@ -415,6 +432,18 @@ No historical account assignment or opening balance can be inferred safely from 
 - Firestore usage and browser memory grow with financial history. Query volume is not aggregated server-side.
 - The production build may report a large JavaScript bundle due to charting and Firebase dependencies; further code splitting/performance work may be useful.
 - No production migration or deployment is performed by local build/test commands.
+
+## Companion documentation
+
+- [ONBOARDING_SYSTEM.md](ONBOARDING_SYSTEM.md) — journey, field requirements, persistence, completion, and existing-user behavior.
+- [FINANCIAL_ACCOUNT_SYSTEM.md](FINANCIAL_ACCOUNT_SYSTEM.md) — account types, balances, opening dates, adjustments, and lifecycle.
+- [MONEY_FLOW_AND_TRANSFER_LOGIC.md](MONEY_FLOW_AND_TRANSFER_LOGIC.md) — income, expenses, openings, internal/external transfers, and examples.
+- [FIRESTORE_SCHEMA.md](FIRESTORE_SCHEMA.md) — Firestore paths, relationships, queries, rules, and migration notes.
+- [FINANCIAL_DATA_INTEGRITY.md](FINANCIAL_DATA_INTEGRITY.md) — arithmetic, atomicity, reporting separation, and limits.
+- [SYSTEM_ARCHITECTURE.md](SYSTEM_ARCHITECTURE.md) — runtime, auth, routing, and service boundaries.
+- [DATABASE_SCHEMA.md](DATABASE_SCHEMA.md) — concise database overview.
+- [FEATURE_ROADMAP.md](FEATURE_ROADMAP.md) — delivered features and follow-up items.
+- [IMPLEMENTATION_REPORT.md](IMPLEMENTATION_REPORT.md) — change inventory and verification results.
 
 ## Troubleshooting
 

@@ -25,6 +25,19 @@ export function parseMoneyToMinor(input, currencyCode) {
   return minor.toString()
 }
 
+export function parseNonnegativeMoneyToMinor(input, currencyCode) {
+  const value = String(input).trim()
+  const exponent = currencyExponent(currencyCode)
+  const match = /^(0|[1-9]\d{0,12})(?:\.(\d+))?$/.exec(value)
+  if (!match) throw new Error('Enter a nonnegative amount using digits and a decimal point.')
+  const fraction = match[2] ?? ''
+  if (fraction.length > exponent) throw new Error(`This currency allows at most ${exponent} decimal places.`)
+  const scale = 10n ** BigInt(exponent)
+  const minor = BigInt(match[1]) * scale + BigInt((fraction + '0'.repeat(exponent)).slice(0, exponent) || '0')
+  if (minor > MAX_MINOR) throw new Error('Amount is above the supported limit.')
+  return minor.toString()
+}
+
 export function formatMoney(minorInput, currencyCode, locale = navigator.language) {
   if (typeof document !== 'undefined' && document.documentElement.dataset.hideBalances === 'true') return '••••'
   let raw = typeof minorInput === 'bigint' ? minorInput : BigInt(minorInput || '0')

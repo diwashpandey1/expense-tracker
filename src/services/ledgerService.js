@@ -46,15 +46,19 @@ export async function listAccounts(uid, { includeArchived = false } = {}) {
     .filter((item) => includeArchived || item.status === 'active')
 }
 
-export async function createAccount(uid, { name, accountType, classification, currencyCode, openingBalanceMinor = '0' }) {
+export async function createAccount(uid, { name, accountType, classification, currencyCode, openingBalanceMinor = '0', provider = '', description = '', purpose = '', subtype = '' }) {
   const cleanName = String(name || '').trim()
   if (!cleanName || cleanName.length > 80) throw new Error('Account name must be between 1 and 80 characters.')
   if (!['cash', 'bank', 'ewallet', 'other'].includes(accountType)) throw new Error('Choose a valid account type.')
   if (!['spending', 'savings'].includes(classification)) throw new Error('Choose spending or savings classification.')
   if (!/^[A-Z]{3}$/.test(currencyCode)) throw new Error('Choose a valid currency.')
   const opening = toMinorBigInt(openingBalanceMinor, 'Opening balance')
+  if (String(provider).length > 80 || String(description).length > 240 || String(purpose).length > 50 || String(subtype).length > 50) throw new Error('Account details are too long.')
   const db = requireDb()
   const ref = doc(userCollection(uid, 'accounts'))
+  const operationId = `opening-${ref.id}`
+  const operationRef = doc(userCollection(uid, 'financialOperations'), operationId)
+  const entryRef = doc(userCollection(uid, 'ledgerEntries'), operationId)
   const auditRef = doc(userCollection(uid, 'auditEvents'), `account-open-${ref.id}`)
   await runTransaction(db, async (tx) => {
     const stateRef = financeStateDoc(uid)
@@ -68,11 +72,14 @@ export async function createAccount(uid, { name, accountType, classification, cu
       openingBalanceMinor: String(opening),
       balanceMinor: safeNumber(opening),
       status: 'active',
+      provider: String(provider).trim(), description: String(description).trim(), purpose: String(purpose).trim(), subtype: String(subtype).trim(),
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     })
     if (classification === 'savings') state.savingsBalanceMinor = String(BigInt(state.savingsBalanceMinor || '0') + opening)
     tx.set(stateRef, { ...state, updatedAt: serverTimestamp() })
+    tx.set(operationRef, { uid, kind: 'account_opening_balance', deltas: { [ref.id]: safeNumber(opening) }, createdAt: serverTimestamp() })
+    tx.set(entryRef, { kind: 'opening_balance', operationKind: 'account_opening_balance', amountMinor: String(opening), accountId: ref.id, occurredOn: localDateString(), note: 'Starting balance when tracking began', postings: [{ accountId: ref.id, deltaMinor: String(opening) }], lastOperationId: operationId, createdAt: serverTimestamp(), updatedAt: serverTimestamp() })
     tx.set(auditRef, { action: 'account_created', accountId: ref.id, openingBalanceMinor: String(opening), createdAt: serverTimestamp() })
   })
   return ref.id
@@ -83,6 +90,7 @@ export async function updateAccount(uid, id, changes) {
   if (!name || name.length > 80) throw new Error('Account name must be between 1 and 80 characters.')
   if (!['cash', 'bank', 'ewallet', 'other'].includes(changes.accountType)) throw new Error('Choose a valid account type.')
   if (!['spending', 'savings'].includes(changes.classification)) throw new Error('Choose spending or savings classification.')
+  for (const [key, max] of [['provider', 80], ['description', 240], ['purpose', 50], ['subtype', 50]]) if (String(changes[key] || '').length > max) throw new Error('Account details are too long.')
   const db = requireDb()
   await runTransaction(db, async (tx) => {
     const ref = accountDoc(uid, id)
@@ -100,7 +108,7 @@ export async function updateAccount(uid, id, changes) {
       savingsBalance = remainingSavings
     }
     if (current.classification !== 'savings' && changes.classification === 'savings') savingsBalance += BigInt(current.balanceMinor || 0)
-    tx.update(ref, { name, accountType: changes.accountType, classification: changes.classification, updatedAt: serverTimestamp() })
+    tx.update(ref, { name, accountType: changes.accountType, classification: changes.classification, provider: String(changes.provider || '').trim(), description: String(changes.description || '').trim(), purpose: String(changes.purpose || '').trim(), subtype: String(changes.subtype || '').trim(), updatedAt: serverTimestamp() })
     tx.set(stateRef, { ...state, savingsBalanceMinor: String(savingsBalance), updatedAt: serverTimestamp() })
   })
 }
@@ -113,6 +121,16 @@ export async function archiveAccount(uid, id) {
     if (!snapshot.exists()) return
     if (snapshot.data().balanceMinor !== 0) throw new Error('Transfer the remaining balance before archiving this account.')
     tx.update(ref, { status: 'archived', updatedAt: serverTimestamp() })
+  })
+}
+
+export async function reactivateAccount(uid, id) {
+  await runTransaction(requireDb(), async (tx) => {
+    const ref = accountDoc(uid, id)
+    const snapshot = await tx.get(ref)
+    if (!snapshot.exists()) throw new Error('This account could not be found.')
+    if (snapshot.data().status === 'active') return
+    tx.update(ref, { status: 'active', updatedAt: serverTimestamp() })
   })
 }
 
@@ -180,7 +198,7 @@ function eventDeltas(event) {
 function validateEventPayload(input) {
   const amount = toMinorBigInt(input.amountMinor)
   if (amount <= 0n || !isCalendarDate(input.occurredOn)) throw new Error('Enter a positive amount and valid date.')
-  if (!['income', 'expense', 'transfer'].includes(input.kind)) throw new Error('Choose a valid event type.')
+  if (!['income', 'expense', 'transfer', 'external_transfer_in', 'external_transfer_out'].includes(input.kind)) throw new Error('Choose a valid event type.')
   if ((input.kind === 'income' || input.kind === 'expense') && (!input.categoryId || !input.categoryName)) throw new Error('Choose a category.')
   return amount
 }
@@ -212,17 +230,18 @@ export async function editFinancialEvent(uid, id, input) {
     const base = new Map(ids.map((accountId) => [accountId, BigInt(accounts.get(accountId)?.balanceMinor ?? 0) - (oldDeltas[accountId] || 0n)]))
     const next = {}
     let savingsAccountId = null
-    if (input.kind === 'income') {
+    if (input.kind === 'income' || input.kind === 'external_transfer_in') {
       const destination = accounts.get(input.accountId)
-      if (!destination || destination.status !== 'active') throw new Error('Choose an active account for income.')
+      if (!destination || destination.status !== 'active') throw new Error('Choose an active account for incoming money.')
       if (destination.currencyCode !== input.currencyCode) throw new Error('Account currency must match your profile currency.')
       next[input.accountId] = amount
     }
-    else if (input.kind === 'expense') {
+    else if (input.kind === 'expense' || input.kind === 'external_transfer_out') {
       const source = accounts.get(input.accountId)
-      if (!source || source.classification !== 'spending' || source.status !== 'active') throw new Error('Choose an active spending account.')
+      if (!source || source.status !== 'active' || (input.kind === 'expense' && source.classification !== 'spending')) throw new Error(input.kind === 'expense' ? 'Choose an active spending account.' : 'Choose an active account for the outgoing transfer.')
       const shortfall = amount > base.get(input.accountId) ? amount - base.get(input.accountId) : 0n
-      if (shortfall > 0n) {
+      if (input.kind === 'external_transfer_out' && shortfall > 0n) throw new Error('The edited external transfer would make the account balance negative.')
+      if (input.kind === 'expense' && shortfall > 0n) {
         savingsAccountId = old.savingsAccountId
         const savings = accounts.get(savingsAccountId)
         if (!savings || savings.classification !== 'savings' || base.get(savingsAccountId) < shortfall) throw new Error('The edited expense needs a savings account with enough available funds.')
@@ -306,7 +325,7 @@ export async function postFinancialEvent(uid, input, { savingsAccountId = null, 
   const categorySplits = validateCategorySplits(input.categorySplits, amount, input.kind)
   if (amount <= 0n) throw new Error('Enter an amount greater than zero.')
   if (!isCalendarDate(input.occurredOn)) throw new Error('Choose a valid date.')
-  if (!['income', 'expense', 'transfer'].includes(input.kind)) throw new Error('Choose a valid financial event type.')
+  if (!['income', 'expense', 'transfer', 'external_transfer_in', 'external_transfer_out'].includes(input.kind)) throw new Error('Choose a valid financial event type.')
   if ((input.kind === 'income' || input.kind === 'expense') && (!input.categoryId || !input.categoryName)) throw new Error('Choose a category.')
   if (input.kind === 'transfer' && (!input.destinationAccountId || input.destinationAccountId === input.accountId)) throw new Error('Choose two different accounts for this transfer.')
   if ((input.note || '').length > 500) throw new Error('Notes must be 500 characters or fewer.')
@@ -316,7 +335,7 @@ export async function postFinancialEvent(uid, input, { savingsAccountId = null, 
   const transactionRef = doc(userCollection(uid, 'transactions'), operationId)
   const operationRef = doc(userCollection(uid, 'financialOperations'), operationId)
   const stateRef = financeStateDoc(uid)
-  const allocationCandidates = (input.kind === 'expense' && savingsAccountId) || input.kind === 'transfer'
+  const allocationCandidates = (input.kind === 'expense' && savingsAccountId) || input.kind === 'transfer' || input.kind === 'external_transfer_out'
     ? (await getDocs(query(userCollection(uid, 'goalAllocations'), orderBy('updatedAt', 'desc')))).docs.map((item) => item.ref)
     : []
   const savingsRows = savingsAccountId ? [accountDoc(uid, savingsAccountId)] : []
@@ -360,7 +379,7 @@ export async function postFinancialEvent(uid, input, { savingsAccountId = null, 
       if (releaseRemaining > 0n) throw new Error('Release goal allocations before withdrawing this savings amount.')
     }
 
-    if (input.kind === 'income') deltas[input.accountId] = amount
+    if (input.kind === 'income' || input.kind === 'external_transfer_in') deltas[input.accountId] = amount
     if (input.kind === 'expense') {
       if (source.classification !== 'spending') throw new Error('Choose a spending account for an expense.')
       const shortfall = amount > BigInt(source.balanceMinor) ? amount - BigInt(source.balanceMinor) : 0n
@@ -379,6 +398,11 @@ export async function postFinancialEvent(uid, input, { savingsAccountId = null, 
         linkedSavingsAccountId = savingsAccountId
         operationKind = 'expense_with_savings_transfer'
       } else deltas[input.accountId] = -amount
+    }
+    if (input.kind === 'external_transfer_out') {
+      if (BigInt(source.balanceMinor) < amount) throw new Error('This account does not have enough money for that external transfer.')
+      if (source.classification === 'savings') releaseAllocationAmount(amount)
+      deltas[input.accountId] = -amount
     }
     if (input.kind === 'transfer') {
       const destination = accounts.get(input.destinationAccountId)

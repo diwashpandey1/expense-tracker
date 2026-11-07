@@ -23,6 +23,7 @@ const AboutPage = lazy(() => import('./pages/AboutPage'))
 const ContactPage = lazy(() => import('./pages/ContactPage'))
 const AppLayout = lazy(() => import('./components/AppLayout'))
 const ProfileSetupPage = lazy(() => import('./pages/ProfileSetupPage'))
+const OnboardingPage = lazy(() => import('./pages/OnboardingPage'))
 
 function FirebaseSetup() {
   return <main className="grid min-h-screen place-items-center bg-[#f7f8f5] p-6">
@@ -40,6 +41,7 @@ function AuthGate({ children }) {
   if (loading || profileLoading) return <LoadingState />
   if (!user) return <Navigate to="/login" replace />
   if (!profile) return <ProfileSetupPage />
+  if (profile.onboardingStatus === 'not_started' || profile.onboardingStatus === 'in_progress') return <OnboardingPage />
   return children
 }
 

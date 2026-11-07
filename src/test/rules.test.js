@@ -48,6 +48,25 @@ describe('Firestore ownership and validation rules', () => {
     await assertFails(setDoc(doc(bob, 'users/alice/settings/preferences'), { ...DEFAULT_PREFERENCES, updatedAt: serverTimestamp() }))
   })
 
+  it('scopes resumable onboarding and private financial profiles to their owner', async () => {
+    const alice = testEnv.authenticatedContext('onboarding-rules-user', { email: 'setup@example.test' }).firestore()
+    const bob = testEnv.authenticatedContext('bob').firestore()
+    await setDoc(doc(alice, 'users/onboarding-rules-user'), {
+      uid: 'onboarding-rules-user', email: 'setup@example.test', displayName: 'Setup', currencyCode: 'USD',
+      onboardingStatus: 'not_started', createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+    })
+    await assertSucceeds(setDoc(doc(alice, 'users/onboarding-rules-user/onboarding/state'), {
+      currentStep: 2, answers: { profile: { fullName: 'Asha' }, habits: { averageIncome: '2000' } }, updatedAt: serverTimestamp(),
+    }))
+    await assertSucceeds(setDoc(doc(alice, 'users/onboarding-rules-user/financialProfile/general'), {
+      occupation: 'Student', occupationOther: '', incomeSources: ['Family support'], incomeEstimate: { mode: 'prefer_not_to_say' },
+      incomeChannels: ['Physical cash'], incomeFrequency: 'Monthly', financialHabits: {}, household: {}, financialGoals: {},
+      createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+    }))
+    await assertFails(getDoc(doc(bob, 'users/onboarding-rules-user/financialProfile/general')))
+    await assertFails(setDoc(doc(bob, 'users/onboarding-rules-user/onboarding/state'), { currentStep: 1, answers: {}, updatedAt: serverTimestamp() }))
+  })
+
   it('requires saving movements to reference the same user goal and saving category', async () => {
     const db = testEnv.authenticatedContext('alice').firestore()
     await setDoc(doc(db, 'users/alice/goals/trip'), {

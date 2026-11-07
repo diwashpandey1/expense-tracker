@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import { onAuthStateChanged } from 'firebase/auth'
 import { auth, firebaseReady } from '../lib/firebase'
 import { createAccount, deleteAccount as removeAccount, ensureProfile, loginAccount, logoutAccount, readProfile, sendPasswordReset, signInWithGoogle as googleAccount, updateProfile as saveProfile } from '../services/authService'
+import { completeOnboarding as completeFinancialOnboarding } from '../services/onboardingService'
 
 const AuthContext = createContext(null)
 
@@ -66,6 +67,14 @@ export function AuthProvider({ children }) {
     return loaded
   }, [user])
 
+  const finishOnboarding = useCallback(async (answers) => {
+    if (!user) throw new Error('Sign in before completing setup.')
+    await completeFinancialOnboarding(user.uid, answers, { displayName: answers.profile?.displayName })
+    const loaded = await readProfile(user.uid)
+    setProfile(loaded)
+    return loaded
+  }, [user])
+
   const logout = useCallback(async () => {
     await logoutAccount()
     setProfile(null)
@@ -78,7 +87,7 @@ export function AuthProvider({ children }) {
     return loaded
   }, [user])
   const deleteAccount = useCallback((password) => removeAccount(user, password), [user])
-  const value = useMemo(() => ({ user, profile, loading, profileLoading, register, login, signInWithGoogle, logout, resetPassword, finishProfileSetup, updateAccountProfile, deleteAccount }), [user, profile, loading, profileLoading, register, login, signInWithGoogle, logout, resetPassword, finishProfileSetup, updateAccountProfile, deleteAccount])
+  const value = useMemo(() => ({ user, profile, loading, profileLoading, register, login, signInWithGoogle, logout, resetPassword, finishProfileSetup, finishOnboarding, updateAccountProfile, deleteAccount }), [user, profile, loading, profileLoading, register, login, signInWithGoogle, logout, resetPassword, finishProfileSetup, finishOnboarding, updateAccountProfile, deleteAccount])
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
